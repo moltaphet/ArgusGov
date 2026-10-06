@@ -113,6 +113,7 @@ class Env:
         self.other = other
         self.deposited = 0  # independent tally: value in minus value out
         self._pid = 42      # next auto-assigned DAO proposal id
+        self.flaggers = {}  # record id -> the account that posted its bond
         self.last_hash = ""
 
     def as_(self, who, value: int = 0):
@@ -151,14 +152,23 @@ class Env:
             raise ValueError("pid is required when commit=False")
         self.as_(who or self.challenger, value)
         rid = self.c.flag_proposal(dao, pid)
+        self.flaggers[rid] = who or self.challenger
         self.deposited += value
         self.as_(who or self.challenger)
         return rid
 
+    def as_flagger(self, rid: int):
+        """Act as the account that flagged `rid`: the only one who may inspect it in the first 30 minutes."""
+        self.as_(self.flaggers.get(rid, self.challenger))
+
     def inspect(self, rid: int, score: int, forum: str = "Marketing grant.", caller=None):
+        """Inspect as the flagger by default, which is always allowed; pass `caller` to act as someone else."""
         mock_forum(self.vm, forum)
         mock_verdict(self.vm, score)
-        self.as_(caller or self.other)
+        if caller is None:
+            self.as_flagger(rid)
+        else:
+            self.as_(caller)
         return self.c.inspect_proposal(rid)
 
     def settle(self, rid: int, caller=None) -> str:

@@ -56,7 +56,14 @@ export function availableActions(p: Proposal, ctx: ActionContext): ActionAvailab
   const out: ActionAvailability[] = [];
   const windowEnd = p.flaggedAt + PROTOCOL.appealWindowSeconds;
   if (p.status === "REGISTERED") {
-    out.push({ id: "inspect", label: "Inspect Consensus", enabled: true });
+    // The challenger alone picks the moment validators read the post for the first 30 minutes.
+    const opensAt = p.proposedAt + PROTOCOL.inspectionExclusiveSeconds;
+    const isChallenger = Boolean(ctx.account && ctx.account === p.challenger.toLowerCase());
+    const open = ctx.now >= opensAt || isChallenger;
+    out.push({
+      id: "inspect", label: "Inspect Consensus", enabled: open,
+      reason: open ? undefined : "Reserved for the challenger for the first 30 minutes after a flag.",
+    });
     const expiresAt = p.proposedAt + PROTOCOL.flagExpirySeconds;
     out.push({
       id: "expire", label: "Reclaim Abandoned Bond", enabled: ctx.now >= expiresAt,

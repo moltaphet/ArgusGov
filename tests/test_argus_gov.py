@@ -379,7 +379,7 @@ def test_prompt_carries_required_instruction_and_decoded_calldata(dao):
                r".*amount_raw=5000000000000000000000")
     dao.vm.mock_llm(pattern, json.dumps(json.dumps(
         {"score": 5, "reasoning": "ok", "is_malicious": False})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 5
 
 
@@ -390,7 +390,7 @@ def test_forum_text_cannot_forge_isolation_tags(dao):
     one_close = r"(?s)\A(?:(?!</untrusted_forum_text>).)*</untrusted_forum_text>(?:(?!</untrusted_forum_text>).)*\Z"
     dao.vm.mock_llm(one_close, json.dumps(json.dumps(
         {"score": 90, "reasoning": "injection", "is_malicious": True})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 90
 
 
@@ -400,7 +400,7 @@ def test_unreadable_forum_is_treated_as_no_declared_intent(dao, status):
     mock_forum(dao.vm, "irrelevant", status=status)
     dao.vm.mock_llm(r"(?s).*NO DESCRIPTION COULD BE RETRIEVED.*", json.dumps(json.dumps(
         {"score": 88, "reasoning": "undisclosed drain", "is_malicious": True})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 88
 
 
@@ -418,7 +418,7 @@ def test_deterministic_decoder_feeds_the_prompt(dao, calldata, needle):
     mock_forum(dao.vm, "Routine maintenance.")
     dao.vm.mock_llm(rf"(?s).*{needle}.*", json.dumps(json.dumps(
         {"score": 40, "reasoning": "r", "is_malicious": False})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 40
 
 
@@ -434,7 +434,7 @@ def test_malformed_llm_answers_revert_and_leave_state_untouched(dao, payload):
     rid = dao.flag()
     mock_forum(dao.vm, "x")
     dao.vm.mock_llm(r".*", json.dumps(json.dumps(payload)))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     with dao.vm.expect_revert("[LLM_ERROR]"):
         dao.c.inspect_proposal(rid)
     assert dao.c.get_proposal(rid)["status"] == "REGISTERED"
@@ -445,7 +445,7 @@ def test_score_is_clamped_to_0_100(dao):
     mock_forum(dao.vm, "x")
     dao.vm.mock_llm(r".*", json.dumps(json.dumps(
         {"score": 250, "reasoning": "x", "is_malicious": True})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 100
 
 
@@ -454,7 +454,7 @@ def test_score_given_as_numeric_string_is_accepted(dao):
     mock_forum(dao.vm, "x")
     dao.vm.mock_llm(r".*", json.dumps(json.dumps(
         {"score": " 30.4 ", "reasoning": "x", "is_malicious": False})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 30
 
 
@@ -554,7 +554,7 @@ def test_unauthorized_proxy_upgrade_is_flagged(dao):
     dao.vm.mock_llm(r"(?s).*PROXY_UPGRADE.*new_address=" + EVIL + r".*",
                     json.dumps(json.dumps({"score": 94, "reasoning": "swaps implementation",
                                            "is_malicious": True})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 94
     assert dao.settle(rid) == "FLAGGED_MALICIOUS"
     assert dao.frozen(42)
@@ -889,7 +889,7 @@ def test_state_machine_rejects_every_illegal_transition(dao, state, method):
     assert dao.c.get_proposal(rid)["status"] == state
     mock_verdict(dao.vm, 90)
     mock_forum(dao.vm, "x")
-    dao.as_(dao.other)
+    dao.as_flagger(rid) if method == "inspect_proposal" else dao.as_(dao.other)
     if state in LEGAL[method]:
         getattr(dao.c, method)(rid)
     else:
@@ -1052,7 +1052,7 @@ def test_regression_poc_attacker_cannot_freeze_a_real_proposal_with_fabricated_c
     mock_forum(dao.vm, "Marketing grant of 5,000 tokens.")
     dao.vm.mock_llm(r"(?s).*amount_raw=5000000000000000000000.*", json.dumps(json.dumps(
         {"score": 4, "reasoning": "Matches the post.", "is_malicious": False})))
-    dao.as_(dao.challenger)
+    dao.as_flagger(rid)
     dao.c.inspect_proposal(rid)
     assert dao.settle(rid) == "VERIFIED_SAFE"
     assert dao.frozen(42) is False
@@ -1129,7 +1129,7 @@ def test_regression_4_native_value_drain_reaches_the_validators_and_is_caught(da
         r"(?s).*plain native-token send of 1000000000000000000000 wei to " + EVIL + r".*"
         r"Total native value sent across all actions: 1000000000000000000000 wei.*",
         json.dumps(json.dumps({"score": 96, "reasoning": "Undisclosed native-currency drain.", "is_malicious": True})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 96
     assert dao.settle(rid) == "FLAGGED_MALICIOUS"
     assert dao.frozen(42) is True
@@ -1145,7 +1145,7 @@ def test_native_value_attached_to_a_contract_call_is_decoded_and_totalled(dao):
         r"PROXY_UPGRADE\].*and sends native value 3000000000000000000 wei.*"
         r"Categories present: .*NATIVE_VALUE.*Total native value sent across all actions: 5000000000000000000 wei.*",
         json.dumps(json.dumps({"score": 90, "reasoning": "r", "is_malicious": True})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 90
 
 
@@ -1154,7 +1154,7 @@ def test_zero_value_empty_calldata_is_reported_as_a_no_op(dao):
     mock_forum(dao.vm, "Placeholder.")
     dao.vm.mock_llm(r"(?s).*empty calldata and zero value.*no effect.*Total native value sent across all actions: 0 wei.*",
                     json.dumps(json.dumps({"score": 2, "reasoning": "r", "is_malicious": False})))
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     assert dao.c.inspect_proposal(rid) == 2
 
 
@@ -1336,7 +1336,7 @@ def test_get_proposal_verdict_returns_the_score_and_full_reasoning(dao):
     reasoning = "The post promises a 5k grant but the calldata moves 5,000,000 tokens. " * 3
     mock_forum(dao.vm, "Marketing grant of 5k tokens.")
     mock_verdict(dao.vm, 91, reasoning=reasoning)
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     dao.c.inspect_proposal(rid)
     v = dao.c.get_proposal_verdict(DAO_KEY, 42)
     assert (v["flagged"], v["record_id"], v["status"], v["threat_score"]) == (True, rid, "ANALYZING", 91)
@@ -1653,7 +1653,7 @@ def _inspect_with_reasoning(dao, reasoning, score=90):
     rid = dao.flag()
     mock_forum(dao.vm, "x")
     mock_verdict(dao.vm, score, reasoning=reasoning)
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     dao.c.inspect_proposal(rid)
     return rid
 
@@ -1716,7 +1716,7 @@ def test_non_string_reasoning_is_coerced_and_bounded(dao, raw, expected):
     rid = dao.flag()
     mock_forum(dao.vm, "x")
     set_llm(dao.vm, r".*", {"score": 90, "reasoning": raw, "is_malicious": True})
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     dao.c.inspect_proposal(rid)
     assert _stored(dao)["reasoning"] == expected
 
@@ -1725,7 +1725,7 @@ def test_missing_reasoning_is_stored_as_empty(dao):
     rid = dao.flag()
     mock_forum(dao.vm, "x")
     set_llm(dao.vm, r".*", {"score": 90, "is_malicious": True})
-    dao.as_(dao.other)
+    dao.as_flagger(rid)
     dao.c.inspect_proposal(rid)
     assert _stored(dao)["reasoning"] == ""
 
@@ -1767,3 +1767,143 @@ def test_a_validator_accepts_a_leader_result_without_reasoning_text(dao):
     dao.inspect(rid, 90)
     mock_verdict(dao.vm, 90)
     assert dao.vm.run_validator(leader_result={"score": 90, "is_malicious": True}) is True
+
+
+# =============================================================================
+# 12. Inspection timing: the challenger controls the first 30 minutes
+# =============================================================================
+WINDOW = 30 * 60
+STRANGER = bytes([0xCD]) * 20
+
+
+def _flag_at_t0(dao, **kw):
+    warp(dao.vm, 0)
+    return dao.flag(**kw)
+
+
+def test_the_view_publishes_when_inspection_opens_to_everyone(dao):
+    rid = _flag_at_t0(dao)
+    p = dao.c.get_proposal(rid)
+    assert p["inspection_opens_at"] == p["proposed_at"] + WINDOW == T0_TS + WINDOW
+
+
+def test_the_flagger_can_inspect_immediately(dao):
+    rid = _flag_at_t0(dao)
+    assert dao.inspect(rid, 12) == 12                                 # same second as the flag, as the flagger
+    assert dao.c.get_proposal(rid)["status"] == "ANALYZING"
+
+
+@pytest.mark.parametrize("who", ["guardian", "other", "stranger", "timelock"])
+def test_non_flaggers_cannot_inspect_inside_the_window(dao, who):
+    """The guardian and the timelock are the proposer's side of the table; none of them, nor a bystander, may pick the moment."""
+    rid = _flag_at_t0(dao)
+    caller = {"guardian": dao.guardian, "other": dao.other, "stranger": STRANGER, "timelock": TIMELOCK_SENDER}[who]
+    mock_forum(dao.vm, "Quietly edited to look harmless.")
+    mock_verdict(dao.vm, 3)
+    dao.as_(caller)
+    with dao.vm.expect_revert("inspection is reserved for the challenger"):
+        dao.c.inspect_proposal(rid)
+    p = dao.c.get_proposal(rid)
+    assert (p["status"], p["threat_score"], p["reasoning_hash"]) == ("REGISTERED", 0, "")   # nothing was recorded
+
+
+def test_the_flagger_is_also_barred_from_nothing_while_others_wait(dao):
+    """Another challenger's flag does not entitle you to inspect: the right belongs to whoever posted that bond."""
+    rid = _flag_at_t0(dao, who=dao.other)
+    dao.as_(dao.challenger)
+    mock_forum(dao.vm, "x")
+    mock_verdict(dao.vm, 5)
+    with dao.vm.expect_revert("inspection is reserved for the challenger"):
+        dao.c.inspect_proposal(rid)
+    assert dao.inspect(rid, 5, caller=dao.other) == 5
+
+
+def test_the_window_closes_exactly_at_thirty_minutes(dao):
+    rid = _flag_at_t0(dao)
+    mock_forum(dao.vm, "x")
+    mock_verdict(dao.vm, 40)
+    warp(dao.vm, WINDOW - 1)                                           # one second before: still reserved
+    dao.as_(dao.other)
+    with dao.vm.expect_revert("inspection is reserved for the challenger"):
+        dao.c.inspect_proposal(rid)
+    warp(dao.vm, WINDOW)                                               # the boundary is inclusive: anyone may inspect
+    dao.as_(dao.other)
+    assert dao.c.inspect_proposal(rid) == 40
+
+
+@pytest.mark.parametrize("who", ["guardian", "other", "stranger", "timelock", "flagger"])
+def test_any_caller_can_inspect_once_the_window_has_elapsed(dao, who):
+    rid = _flag_at_t0(dao)
+    warp(dao.vm, WINDOW + 1)
+    caller = {"guardian": dao.guardian, "other": dao.other, "stranger": STRANGER, "timelock": TIMELOCK_SENDER, "flagger": dao.challenger}[who]
+    assert dao.inspect(rid, 21, caller=caller) == 21
+    assert dao.c.get_proposal(rid)["status"] == "ANALYZING"
+
+
+def test_a_flagger_who_never_inspects_cannot_hold_the_proposal_hostage(dao):
+    rid = _flag_at_t0(dao)
+    warp(dao.vm, 3 * 3600)                                             # hours later, the flagger has vanished
+    assert dao.inspect(rid, 93, caller=dao.guardian) == 93
+    assert dao.settle(rid, caller=dao.other) == "FLAGGED_MALICIOUS"
+    dao.assert_conserved()
+
+
+def test_a_proposer_cannot_lock_in_a_benign_looking_edit_by_inspecting_first(dao):
+    """The manipulation this window exists to stop. The post is edited to look harmless and the proposer rushes
+    to inspect; the call reverts, and the challenger's own inspection reads the post as it really stands."""
+    rid = _flag_at_t0(dao)
+    mock_forum(dao.vm, "Routine maintenance. Nothing to see.")
+    mock_verdict(dao.vm, 2)
+    dao.as_(dao.guardian)                                              # the proposer's side tries to self-trigger
+    with dao.vm.expect_revert("inspection is reserved for the challenger"):
+        dao.c.inspect_proposal(rid)
+    assert dao.c.get_proposal(rid)["status"] == "REGISTERED"
+    assert dao.inspect(rid, 97, forum="Marketing grant of 5k tokens.") == 97   # the flagger's reading is the one recorded
+    assert dao.settle(rid) == "FLAGGED_MALICIOUS"
+
+
+def test_failed_attempts_do_not_consume_anything_and_the_flagger_still_inspects(dao):
+    rid = _flag_at_t0(dao)
+    for who in (dao.guardian, dao.other, STRANGER):
+        dao.as_(who)
+        with dao.vm.expect_revert("inspection is reserved for the challenger"):
+            dao.c.inspect_proposal(rid)
+    assert dao.inspect(rid, 7) == 7
+    dao.assert_conserved()
+
+
+def test_a_reflag_opens_a_fresh_window_for_its_own_flagger(dao):
+    first = dao.flag_inspect_settle(5, pid=42)                         # judged safe
+    warp(dao.vm, 2 * DAY)
+    second = dao.flag(who=dao.other, pid=42, commit=False, value=2 * BOND)
+    proposed = dao.c.get_proposal(second)["proposed_at"]
+    assert proposed == T0_TS + 2 * DAY and dao.c.get_proposal(second)["inspection_opens_at"] == proposed + WINDOW
+    mock_forum(dao.vm, "x")
+    mock_verdict(dao.vm, 90)
+    dao.as_(dao.challenger)                                            # the first challenger has no standing on the re-flag
+    with dao.vm.expect_revert("inspection is reserved for the challenger"):
+        dao.c.inspect_proposal(second)
+    assert dao.inspect(second, 90, caller=dao.other) == 90
+    assert dao.c.get_proposal(first)["status"] == "VERIFIED_SAFE"
+
+
+def test_the_window_does_not_extend_flag_expiry_or_appeal_resolution(dao):
+    """Only the first inspection is gated. Expiry still takes 7 days and re-evaluating an appeal stays permissionless."""
+    rid = dao.flag_inspect_settle(92)
+    dao.appeal(rid)
+    mock_forum(dao.vm, "x")
+    mock_verdict(dao.vm, 10)
+    dao.as_(STRANGER)
+    assert dao.c.resolve_appeal(rid) == "APPEAL_ACCEPTED"
+    abandoned = dao.flag(who=dao.other, pid=77)                        # a different challenger: the first is cooling down
+    warp(dao.vm, 7 * DAY)
+    dao.as_(STRANGER)
+    assert dao.c.expire_flag(abandoned) == BOND
+
+
+def test_inspecting_twice_is_still_refused_for_the_flagger_too(dao):
+    rid = _flag_at_t0(dao)
+    dao.inspect(rid, 10)
+    dao.as_flagger(rid)
+    with dao.vm.expect_revert("not awaiting inspection"):
+        dao.c.inspect_proposal(rid)

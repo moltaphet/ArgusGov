@@ -94,7 +94,7 @@ function Detail({ p }: { p: Proposal }) {
   const verdictDate = consensus.data?.createdAt ? new Date(consensus.data.createdAt) : new Date(verdictTime * 1000);
 
   const handlers: Record<ActionId, () => Promise<boolean>> = {
-    inspect: () => inspect.inspect(p.id, p.status),
+    inspect: () => inspect.inspect(p.id, p.status, { challenger: p.challenger, proposedAt: p.proposedAt }),
     settle: () => settle.execute(p.id),
     appeal: () => appeal.appeal(p),
     claim: () => claim.claim(p.id),

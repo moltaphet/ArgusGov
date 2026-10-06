@@ -45,6 +45,7 @@ const RULES: Rule[] = [
   { match: /equal-length/i, code: "BAD_ACTIONS", title: "Check the actions", message: "Provide 1 to 10 actions, each with one target and one calldata." },
   { match: /invalid address/i, code: "BAD_ADDRESS", title: "Invalid address", message: "Addresses must be 0x followed by 40 hex characters." },
   { match: /invalid calldata/i, code: "BAD_CALLDATA", title: "Invalid calldata", message: "Calldata must be even-length 0x hex of at most 8,192 characters." },
+  { match: /inspection is reserved for the challenger/i, code: "INSPECTION_RESERVED", title: "Reserved for the challenger", message: "For the first 30 minutes after a flag, only the wallet that posted its bond can start the inspection. It opens to everyone afterwards." },
   { match: /not awaiting inspection/i, code: "NOT_AWAITING_INSPECTION", title: "Already inspected", message: "Validators have already scored this proposal." },
   { match: /no unsettled verdict/i, code: "NO_VERDICT", title: "Nothing to settle", message: "There is no recorded verdict waiting to be settled." },
   { match: /appeal window still open/i, code: "APPEAL_WINDOW_OPEN", title: "Appeal window still open", message: "The reward vests 24 hours after the verdict, once the DAO can no longer appeal." },

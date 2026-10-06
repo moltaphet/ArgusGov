@@ -56,6 +56,17 @@ describe("available actions", () => {
     expect(availableActions({ ...base, status: "EXPIRED" }, { now: 0 })).toEqual([]);
   });
 
+  it("reserves the first inspection for the challenger for 30 minutes, then opens it to everyone", () => {
+    const registered = { ...base, status: "REGISTERED" as const, proposedAt: 1_000 };
+    const opens = 1_000 + 30 * 60;
+    expect(byId(registered, { now: 1_000, account: "0xchallenger" }).inspect.enabled).toBe(true);          // the flagger, at once
+    expect(byId(registered, { now: opens - 1, account: "0xother" }).inspect.enabled).toBe(false);
+    expect(byId(registered, { now: opens - 1, account: "0xother" }).inspect.reason).toMatch(/challenger/i);
+    expect(byId(registered, { now: opens - 1 }).inspect.enabled).toBe(false);                             // not connected
+    expect(byId(registered, { now: opens, account: "0xother" }).inspect.enabled).toBe(true);              // inclusive boundary
+    expect(byId(registered, { now: opens + 3600 }).inspect.enabled).toBe(true);
+  });
+
   it("lets an abandoned flag be reclaimed only after 7 days, inclusive", () => {
     const registered = { ...base, status: "REGISTERED" as const, proposedAt: 1_000 };
     const expiry = 1_000 + 7 * DAY;

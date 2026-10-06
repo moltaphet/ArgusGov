@@ -16,6 +16,7 @@ describe("contract error decoder", () => {
     ["[LLM_ERROR] is_malicious contradicts score", "Validators could not agree"],
     ["[EXPECTED] re-flag bond must equal 2x min_challenge_bond", "Re-flag bond required"],
     ["[EXPECTED] re-flag limit reached for this proposal", "Re-flag limit reached"],
+    ["[EXPECTED] inspection is reserved for the challenger during the first 30 minutes", "Reserved for the challenger"],
     ["[EXPECTED] Proposal not committed by DAO", "Proposal not committed"],
     ["[EXPECTED] proposal already committed", "Already committed"],
     ["[EXPECTED] only the DAO guardian or the timelock can commit proposals", "Guardian or timelock only"],

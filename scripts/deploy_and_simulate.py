@@ -303,6 +303,9 @@ def run_network(endpoint: str, forum_url: str) -> int:
     # Negative test: a challenger cannot flag a proposal the DAO never committed.
     send("flag_uncommitted_rejected", "flag_proposal", [DAO_KEY, 999], challenger, BOND)
     send("flag_proposal", "flag_proposal", [DAO_KEY, 1], challenger, BOND, proposal_id=1)
+    # Negative test: inside the 30-minute window only the challenger may inspect, so the
+    # proposer's side (here the guardian) cannot choose when validators read the post.
+    send("inspect_by_non_flagger_rejected", "inspect_proposal", [1], guardian, proposal_id=1)
     send("inspect_proposal", "inspect_proposal", [1], challenger, proposal_id=1)
     proposal = read("get_proposal", [1])
     print(f"  consensus verdict: status={proposal['status']} score={proposal['threat_score']}")

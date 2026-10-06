@@ -56,6 +56,7 @@ MIN_DAO_DEPOSIT = 10 * ATTO              # smallest security pool deposit
 CHALLENGE_COOLING_PERIOD = 4 * 3600      # lockout after a failed challenge
 APPEAL_WINDOW = 24 * 3600                # guardian appeal window
 FLAG_EXPIRY = 7 * 24 * 3600              # an uninspected flag returns its bond after this
+INSPECTION_EXCLUSIVE_WINDOW = 30 * 60    # only the challenger may inspect for this long after a flag
 APPEAL_BOND_MULTIPLIER = 2
 THREAT_THRESHOLD = 75                    # score >= 75 -> malicious
 BOUNTY_BPS = 1000                        # 10% of the DAO's unlocked pool
@@ -625,6 +626,7 @@ def _view(rec: ProposalRecord) -> dict:
         "appeal_bond": int(rec.appeal_bond),
         "flagged_at": int(rec.flagged_at),
         "reserved_bounty": int(rec.reserved_bounty),
+        "inspection_opens_at": int(rec.proposed_at) + INSPECTION_EXCLUSIVE_WINDOW,
         "prev_flag_id": int(rec.prev_flag_id),
         "is_reflag": int(rec.prev_flag_id) != 0,
         "reward_amount": int(rec.reward_amount),
@@ -1090,10 +1092,17 @@ class ArgusGov(gl.contract.Contract):
     @gl.public.write
     def inspect_proposal(self, proposal_id: int) -> int:
         """Run validator consensus on a REGISTERED flag and record the verdict
-        (status -> ANALYZING). Permissionless. Settlement is a separate step."""
+        (status -> ANALYZING). Settlement is a separate step.
+
+        Validators read the forum post at the moment of inspection, so whoever picks that
+        moment can influence what they read. For the first 30 minutes after a flag only the
+        challenger, who has a bond at stake, may inspect; afterwards anyone can, so a flagger
+        who never inspects cannot hold the proposal hostage."""
         rec = self._get(proposal_id)
         if rec.status != REGISTERED:
             raise _fail("proposal is not awaiting inspection")
+        if self._caller() != rec.challenger and self._now() < int(rec.proposed_at) + INSPECTION_EXCLUSIVE_WINDOW:
+            raise _fail("inspection is reserved for the challenger during the first 30 minutes")
         verdict = _consensus_verdict(
             rec.forum_url, json.loads(rec.targets_json), json.loads(rec.values_json), json.loads(rec.calldatas_json)
         )

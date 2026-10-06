@@ -53,7 +53,7 @@ is two DAOs.
 | `commit_proposal(dao_key, proposal_id, targets, values, calldatas, forum_url)` | guardian or timelock | records the payload once and returns its `keccak256(abi.encode(...))` commitment |
 | `flag_proposal(dao_key, proposal_id)` payable | anyone | `msg.value == 2 GEN` (or **4 GEN** for the one re-flag of a proposal judged safe); payload comes only from the commitment; returns the record id |
 | `expire_flag(id)` | anyone | after 7 days, returns the bond of a flag nobody inspected and frees the proposal |
-| `inspect_proposal(id)` | anyone | validator consensus on a score; `REGISTERED -> ANALYZING` |
+| `inspect_proposal(id)` | the challenger for 30 min after the flag, then anyone | validator consensus on a score; `REGISTERED -> ANALYZING` |
 | `execute_circuit_breaker(id)` | anyone | settles the verdict; one shot |
 | `claim_reward(id)` | challenger | after the appeal window, vests bond + bounty into `claimable` |
 | `appeal_flag(id)` payable | DAO guardian | `msg.value == 2x bond`, inside 24h; `-> CHALLENGED_PAUSED` |
@@ -111,7 +111,7 @@ challengers are paid, without making flags a cheap weapon against honest proposa
 | T6 | Griefing: spam flags to freeze honest proposals | challenger | each false alarm burns the bond (half to the DAO, half destroyed), then a 4h lockout; caller limit 3/day, DAO limit 10/day; a flag freezes nothing until a verdict says so | a well-funded griefer can still impose cost per flag; the DAO is compensated by the slashed half |
 | T7 | **Forged payload: flag a real proposal id with fabricated malicious calldata and freeze it** | any challenger | flag takes `(dao_key, proposal_id)` only. The payload is whatever the DAO committed; only the guardian or timelock can commit, and only once | see trust assumption 1 |
 | T17 | **Squat-and-freeze DoS:** a squatter holds a DAO's guardian seat, commits a forged payload and freezes it, hoping to block the real execution | squatter | the freeze check is bound to a hash: `is_execution_frozen(dao_key, id, expected_payload_hash)` is true only when the caller's hash equals the committed one byte for byte, so a guard that passes the genuine proposal's hash is never blocked by a forgery | the genuine DAO cannot commit, and so cannot have flagged, a proposal id a squatter committed first; this matters for sequential ids, not for hash-derived ones |
-| T18 | **One bond clears a malicious proposal:** a friendly challenger flags it once while the post reads benignly, and the SAFE verdict is final | malicious proposer | a proposal judged safe can be challenged once more, at 2x the bond, which re-inspects the post as it reads now; a second SAFE verdict is final | see trust assumption 4; the re-flag raises the price of the trick, it does not remove it |
+| T18 | **Inspect-timing manipulation:** validators read the forum post at the moment of inspection, so whoever picks that moment can steer what they read. A proposer edits the post to look harmless, then self-triggers `inspect_proposal` (at no bond cost, if someone else flagged) to collect a SAFE verdict and restores the misleading text afterwards | malicious proposer | **challenger-exclusive inspection window:** for the first 30 minutes after a flag, only the address that posted the bond may call `inspect_proposal` (`inspection_opens_at` is published in the view). The challenger can inspect immediately, so the post is read when they choose, and a proposer's rushed edit-then-inspect reverts. After 30 minutes inspection is permissionless, so a flagger who never inspects cannot lock the proposal. Also: a SAFE verdict can be re-flagged once at 2x the bond, which re-reads the post and opens its own exclusive window for the new flagger; a second SAFE verdict is final | **Narrowed, not eliminated.** The proposer can still edit the post *before* a flag lands, edit during the window and hope the challenger inspects after, inspect at minute 31 if the challenger is slow, or flag their own proposal (paying a bond that is slashed on SAFE) to gain the exclusive window. A colluding flagger defeats it. `resolve_appeal` stays permissionless. See trust assumption 4 |
 | T19 | Oversized or malformed reasoning text bloats storage or breaks encoding | a hostile leader validator | reasoning is capped at 1,000 characters (truncated with `... [TRUNCATED]`), sanitised to valid UTF-8, bounded again before storage, and a validator rejects an oversized or unencodable leader result | - |
 | T8 | Bounty farming against a pool | colluding proposer/challenger | bounty is 10% of the *unlocked* pool, so it shrinks geometrically and is not drainable in one shot | a colluding pair can extract part of the pool by self-flagging; the guardian's appeal (2x bond) exists to contest it |
 | T9 | Appeal abuse to delay a real freeze | malicious DAO guardian | appeal needs 2x bond, one appeal only, freeze stays in force while paused, a losing appellant forfeits the bond | the appeal window delays the challenger's payout by 24h |
@@ -156,6 +156,8 @@ challengers are paid, without making flags a cheap weapon against honest proposa
      validators read the post again as it stands then. The doubled bond prices out spam while
      leaving a genuine second challenge affordable, and the doubled stake is also doubled
      downside for a challenger who is wrong;
+   * for the first 30 minutes after a flag **only the challenger can inspect** (T18), so a proposer cannot
+     choose the moment validators read the post. This narrows the manipulation; it does not close it;
    * the second SAFE verdict is final, so the escalation is bounded and a proposer cannot be
      harassed indefinitely;
    * an unreadable post is treated as *no declared intent*, so taking it down is not an escape.
@@ -178,6 +180,7 @@ All constants live at the top of `contracts/argus_gov.py`.
 | false-alarm slash | 50% to the DAO pool, 50% to the burn vault |
 | cooling period | 4h lockout for a challenger after a failed challenge (inclusive boundary) |
 | appeal window | 24h from the malicious verdict (exclusive end) |
+| inspection window | 30 min after a flag, only the challenger may inspect (inclusive end); then anyone |
 | flag expiry | 7 days, only for an uninspected flag (inclusive boundary) |
 | reasoning cap | 1,000 characters stored, truncation marker included |
 | rate limits | 3 flags per caller and 10 per DAO per fixed 24h window |
@@ -296,7 +299,7 @@ validator votes, is in `deployments/studio-next.json` (the first, pre-commitment
 archived in `studio-next.v1.json`). The live run registers a DAO, commits a proposal, **proves an
 uncommitted flag is rejected on-chain**, flags, inspects and settles through real validator
 consensus, then checks the hash-bound freeze: **true for the committed hash, false for any other**.
-The contract is at `0xbF0b2bF4A9eA784149D43cd1Df5887c4999B6261`; earlier deployments are archived as
+The contract is at `0x8b7bB0e8aCddFC15f675DaEFfBAd0c89481FE2C1`; earlier deployments are archived as
 `studio-next.v1.json` and `studio-next.v2.json`.
 
 ```bash
