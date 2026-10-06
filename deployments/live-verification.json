@@ -1,0 +1,47 @@
+{
+  "contract_address": "0x3f53bAA9468670798dcf8985fF29d52116f8E1A0",
+  "dao_key": "61997:0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+  "proposal_id": 2,
+  "steps": [
+    {
+      "label": "a_commit_proposal",
+      "tx_hash": "0xe97b8ef06c578577fec2cdbb7193aa35e5dbcd15cde2a5cd0f2e970392fd7729",
+      "execution": "FINISHED_WITH_RETURN",
+      "revert_message": null,
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xe97b8ef06c578577fec2cdbb7193aa35e5dbcd15cde2a5cd0f2e970392fd7729"
+    },
+    {
+      "label": "b_flag_proposal",
+      "tx_hash": "0xba0cadb6414a3d89d6ea2a2321dc8f587343e0c4df3a9e770e53bf382c682446",
+      "execution": "FINISHED_WITH_RETURN",
+      "revert_message": null,
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xba0cadb6414a3d89d6ea2a2321dc8f587343e0c4df3a9e770e53bf382c682446"
+    },
+    {
+      "label": "c_inspect_by_non_challenger",
+      "tx_hash": "0xcf4f9129d280a8d2e568c3ab2d4db564439080969ea550b18b16a748824d6891",
+      "execution": "FINISHED_WITH_ERROR",
+      "revert_message": "[EXPECTED] inspection is reserved for the challenger during the first 30 minutes",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xcf4f9129d280a8d2e568c3ab2d4db564439080969ea550b18b16a748824d6891"
+    },
+    {
+      "label": "d_inspect_by_challenger",
+      "tx_hash": "0x1aa5c147c7f3f526584b8902a40e6950a488dbde1e288de7387f85065c139844",
+      "execution": "FINISHED_WITH_RETURN",
+      "revert_message": null,
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x1aa5c147c7f3f526584b8902a40e6950a488dbde1e288de7387f85065c139844"
+    },
+    {
+      "label": "e_execute_circuit_breaker",
+      "tx_hash": "0x7ea7dbbdbfaa06e31ee03e16f027202ce58d4327968522bb04bca7a2e08d48df",
+      "execution": "FINISHED_WITH_RETURN",
+      "revert_message": null,
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x7ea7dbbdbfaa06e31ee03e16f027202ce58d4327968522bb04bca7a2e08d48df"
+    }
+  ],
+  "ran_at": "2026-10-06T17:51:05.163318+00:00",
+  "passed": true,
+  "final_status": "FLAGGED_MALICIOUS",
+  "threat_score": 92,
+  "reasoning_chars": 546
+}

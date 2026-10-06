@@ -8,19 +8,19 @@
   "guardian": "0x71bBa92ADa5E1fC0Ed325fa739588EcFdc0Df166",
   "challenger": "0xDBd723E8D193683d882FA48AbcECDFCa9C89EA80",
   "forum_url": "https://example.com",
-  "contract_address": "0x8b7bB0e8aCddFC15f675DaEFfBAd0c89481FE2C1",
+  "contract_address": "0x3f53bAA9468670798dcf8985fF29d52116f8E1A0",
   "transactions": [
     {
       "label": "deploy",
-      "tx_hash": "0xe8a9359019322ec25e6275688cc6d1f7b42a50434da30bc20fd530588debc1eb",
+      "tx_hash": "0x9a9672c68e29c76af49fc95b0e1e43117971b6d4620cc8ed7f1dc87845e9ce37",
       "proposal_id": null,
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xe8a9359019322ec25e6275688cc6d1f7b42a50434da30bc20fd530588debc1eb",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x9a9672c68e29c76af49fc95b0e1e43117971b6d4620cc8ed7f1dc87845e9ce37",
       "consensus": {
         "result": "MAJORITY_AGREE",
         "decision": "ACCEPTED",
-        "appeal_deadline": 1791308217,
+        "appeal_deadline": 1791308959,
         "initial_validators": 5,
         "round": "0",
         "leader_index": "0",
@@ -28,11 +28,11 @@
         "votes_revealed": "5",
         "rotations_left": "3",
         "validators": [
-          "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025",
-          "0xEEcEC5D1E07Ee40f5cb85aF922178Dc01278013C",
-          "0xA793D9dc0ED9edC1f9F732bB68b5D3AFA934F52D",
-          "0x5cDf4BdDeEDa0e32ED596b94f69AcC0FbB57f264",
-          "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E"
+          "0xE4E106086F167D75E2270fa5f3680f6ac598d179",
+          "0x5A4230B920b18c4AFD3A28F99Eae669B7F2cdC1e",
+          "0xcF5Fd792Df0Dc9d297af75c82B4A0011e8FA1A4A",
+          "0x8D32eb5D0207f7E230C45e7BF0D14B2ED5DA3028",
+          "0x5cDf4BdDeEDa0e32ED596b94f69AcC0FbB57f264"
         ],
         "votes": [
           "AGREE",
@@ -42,25 +42,25 @@
           "IDLE"
         ],
         "votes_hash": [
-          "0x46854fd5c9cebf8951b7854b2f979870e352a1e7155bbe2a12ea6c0093ce399f",
-          "0x9f8dd2c9bc6574a2b5922df45f4ae1ac5b29e9d5fb3f18fe54ac2e5e6fb608be",
-          "0x3ac0b71d4dc636cbe0e5d8f3da994d6fb82937bb366bc8a0f424097b33243c12",
-          "0x3c01f1a51af930e1e0aabb7aba81c77961f2e767f2d436893f00be48a9547814",
-          "0x61be360906639e484a0f21292139f2782e907cc0b355352049ebe015ade56103"
+          "0x636634bc4819c03d1f3f0aeab6899b0ab1fb4c4ab2faa0faaddbf748eb593b8b",
+          "0x3abef7055dc48f2917abd014a2764166da8292419a24d3c5893c1c88c637f878",
+          "0xdb7010dfceb5a4ea031c32df7397d29df8977a75b3d383c34f2a3f8df131517b",
+          "0xb910b8419660902bf44c91724baa7418ff2b72bb725ddeccf3a830e6361524f4",
+          "0xb4e13680465c85ee56ef4bc43c48f0f84aeba311fc97cd8080f90575d9ad8c47"
         ]
       }
     },
     {
       "label": "register_dao",
-      "tx_hash": "0xd0764f67d3cd5c1aa0ebc120768ad2a04c67b89d83493a0c204b27e91deae010",
+      "tx_hash": "0x77ffdf489c198eecbd528edc9e0bad5a8c4a9718fbc4e687bb3477e1f2a165ee",
       "proposal_id": null,
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xd0764f67d3cd5c1aa0ebc120768ad2a04c67b89d83493a0c204b27e91deae010",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x77ffdf489c198eecbd528edc9e0bad5a8c4a9718fbc4e687bb3477e1f2a165ee",
       "consensus": {
         "result": "MAJORITY_AGREE",
         "decision": "ACCEPTED",
-        "appeal_deadline": 1791308229,
+        "appeal_deadline": 1791308974,
         "initial_validators": 5,
         "round": "0",
         "leader_index": "0",
@@ -68,39 +68,39 @@
         "votes_revealed": "5",
         "rotations_left": "3",
         "validators": [
-          "0xE52dDB85587585930b1E5f1Fe88fef21CcA49829",
-          "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77",
-          "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E",
+          "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025",
+          "0x5A4230B920b18c4AFD3A28F99Eae669B7F2cdC1e",
           "0xEEcEC5D1E07Ee40f5cb85aF922178Dc01278013C",
-          "0xa0435f618c1F27B254998018AEa8Da5C77187852"
+          "0x8D32eb5D0207f7E230C45e7BF0D14B2ED5DA3028",
+          "0xf13c3DfE38C8E206C33F750C24a1b043b63Cb810"
         ],
         "votes": [
-          "AGREE",
+          "IDLE",
           "AGREE",
           "IDLE",
           "AGREE",
-          "IDLE"
+          "AGREE"
         ],
         "votes_hash": [
-          "0x68504783aa8a9bab2870eced278372c155620bb8facf8872ee014e690026ed7e",
-          "0xd997b33847487306cdf1b7f7fb8d0e088d62ca2b9c80fa7537704747fdd9d2e7",
-          "0xf75ea1c15ed5a01c198b7e0e63caa4802824de2ac36c5b009fd10c6e7eb29df8",
-          "0x60225fc778840fda0e783cc460e03cae633ad2eed36190a9157cf280ad2c24ba",
-          "0x71663bcc1c5e8cdfe18df02ee4baca1b6fa32cbc051c6e32277d468351f8336c"
+          "0xfab65c784e3aeea54df78abfe127990edcfb0bbc76fac7e0f283e692f926d82d",
+          "0x0b958e8b9d71393f0336d4a550887698a990bba8a742aa7912a41400f2f305eb",
+          "0x6b672e526cb4158eabdd4a92f96d4ce0ccce56604fbb546b53fabaeaf01d73c3",
+          "0xdc289935b771102637ffe008e6562449e7edb0fe785d33022965a2fe4c93ef28",
+          "0xc5f0ef7971fbea7821d8c68686b73827b4eb3177162ba93582dd3e2a677bbcc6"
         ]
       }
     },
     {
       "label": "commit_proposal",
-      "tx_hash": "0xe808a43a4be904b3dc97b55f0585a6b38deaee97ebde3122f458b939db9cd677",
+      "tx_hash": "0x032d184a78b749c1cb0e058531ee9b8d7a40e59477ebb301e764e97b4d24194b",
       "proposal_id": 1,
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xe808a43a4be904b3dc97b55f0585a6b38deaee97ebde3122f458b939db9cd677",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x032d184a78b749c1cb0e058531ee9b8d7a40e59477ebb301e764e97b4d24194b",
       "consensus": {
         "result": "MAJORITY_AGREE",
         "decision": "ACCEPTED",
-        "appeal_deadline": 1791308241,
+        "appeal_deadline": 1791308986,
         "initial_validators": 5,
         "round": "0",
         "leader_index": "0",
@@ -108,39 +108,39 @@
         "votes_revealed": "5",
         "rotations_left": "3",
         "validators": [
-          "0x5A4230B920b18c4AFD3A28F99Eae669B7F2cdC1e",
-          "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77",
-          "0x05d8aFc66B515038712537f99cAAEA73d16f0007",
-          "0xE4E106086F167D75E2270fa5f3680f6ac598d179",
-          "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025"
+          "0x6760cDeC573cf38568C59872ee48B6fED41F8A4c",
+          "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E",
+          "0xcF5Fd792Df0Dc9d297af75c82B4A0011e8FA1A4A",
+          "0x1dA3a7de8EA65A318bf88Eb63d3dC55295Dd257E",
+          "0x5A4230B920b18c4AFD3A28F99Eae669B7F2cdC1e"
         ],
         "votes": [
+          "AGREE",
+          "AGREE",
+          "AGREE",
           "IDLE",
-          "AGREE",
-          "AGREE",
-          "AGREE",
           "IDLE"
         ],
         "votes_hash": [
-          "0xc387bccdb22552330764691341e7e7b3b0a4d98a23f71c85dc7dcdf84af3b8ff",
-          "0xd67f2545ea003b07ffa20445ee6e7f040cf1340fd35bbf8ccdcf6e0970c35711",
-          "0xf843de87c34724f9e02dd09337f33fbfb24fb7da5fec6588e66b97f609a70728",
-          "0x7ba19b8ad8bd7b07e362d2e39464ce71034b846340df1b19b5301822c3456cd7",
-          "0xc2789193980707d16db298aaecec50daadd182d7d25a29ad5262c2f504986ee1"
+          "0x0d9f860611b03a0c3b38a04f3c2d71d7462d1476e2f217457a00177f1ec0e522",
+          "0xc4291df2e2dbe74813090b7f53acc640ec1d5981b54b5ae4081450c78eb954e3",
+          "0xce1363051ecdc6571d4edf4d29c6be68bb751e8614dcde0a6ef6b29f215e3e7d",
+          "0xe55888d175c2fc3d1fd14f735d7fa4879e4d2fd3714caafc142a521e684b2ce4",
+          "0x300b520252fec8ecb9f5efa743ac497ea8b85619152db7c4ec8ce9ba0eba731d"
         ]
       }
     },
     {
       "label": "flag_uncommitted_rejected",
-      "tx_hash": "0x31110e2069a607db35fe80060f75fb8c4fa338c8b6e4f84b073b497a7c79c7a6",
+      "tx_hash": "0x263717cb8ceb4274d59081fb8fc716146a0d71a9c1f94eca7f39c0ccff8692cc",
       "proposal_id": null,
       "execution": "FINISHED_WITH_ERROR",
       "revert_message": "[EXPECTED] Proposal not committed by DAO",
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x31110e2069a607db35fe80060f75fb8c4fa338c8b6e4f84b073b497a7c79c7a6",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x263717cb8ceb4274d59081fb8fc716146a0d71a9c1f94eca7f39c0ccff8692cc",
       "consensus": {
         "result": "MAJORITY_AGREE",
         "decision": "ACCEPTED",
-        "appeal_deadline": 1791308254,
+        "appeal_deadline": 1791308997,
         "initial_validators": 5,
         "round": "0",
         "leader_index": "0",
@@ -148,91 +148,11 @@
         "votes_revealed": "5",
         "rotations_left": "3",
         "validators": [
-          "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E",
-          "0xa0435f618c1F27B254998018AEa8Da5C77187852",
-          "0x5A4230B920b18c4AFD3A28F99Eae669B7F2cdC1e",
-          "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025",
-          "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77"
-        ],
-        "votes": [
-          "AGREE",
-          "AGREE",
-          "AGREE",
-          "IDLE",
-          "IDLE"
-        ],
-        "votes_hash": [
-          "0x227d80f536469059322e45f34494a52d1183f9bc40b9557eeb0c053cb4677a47",
-          "0xaba6822d09737942205736a81b2b42e942cf8dab64fd2f8c13b38ad858d11bf0",
-          "0xbf23cce46778a6d96d40db71a52c6e279b47a6069e93134bdf56d097588b7057",
-          "0x6d3d0c87a8d0f9aab576bdd4ed3de32c952e08693b089f08066d202b1650e5f9",
-          "0x1f79c4b045c9cc98d6f22179627cc19f4d054c9102845e810536bc1f7fa98ad2"
-        ]
-      }
-    },
-    {
-      "label": "flag_proposal",
-      "tx_hash": "0x0643d52ed55a24fb6ab2b4c54b03baf64197e15b3351411acd2b59d46624cf93",
-      "proposal_id": 1,
-      "execution": "FINISHED_WITH_RETURN",
-      "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x0643d52ed55a24fb6ab2b4c54b03baf64197e15b3351411acd2b59d46624cf93",
-      "consensus": {
-        "result": "MAJORITY_AGREE",
-        "decision": "ACCEPTED",
-        "appeal_deadline": 1791308267,
-        "initial_validators": 5,
-        "round": "0",
-        "leader_index": "0",
-        "votes_committed": "5",
-        "votes_revealed": "5",
-        "rotations_left": "3",
-        "validators": [
-          "0x5A4230B920b18c4AFD3A28F99Eae669B7F2cdC1e",
-          "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E",
-          "0xcF5Fd792Df0Dc9d297af75c82B4A0011e8FA1A4A",
-          "0xa0435f618c1F27B254998018AEa8Da5C77187852",
-          "0x05d8aFc66B515038712537f99cAAEA73d16f0007"
-        ],
-        "votes": [
-          "AGREE",
-          "AGREE",
-          "IDLE",
-          "AGREE",
-          "IDLE"
-        ],
-        "votes_hash": [
-          "0x0b958e8b9d71393f0336d4a550887698a990bba8a742aa7912a41400f2f305eb",
-          "0x8db8095b526539f9b8d158a65dea9eb9490ad32142fb4f70abf0ace5a5d9e016",
-          "0x69ffe09d911d7cb2d79c7b019ea7ffb78a650038d80f390c4a2e0ad791a23e78",
-          "0x8bbd9c30b71f7f7d39463c114d816547c5651f3a816b6881dbf8c262cfd12b5f",
-          "0x6be4fa964c3574142ce966d088072fc35233ab09e75c19ac712d74486982c993"
-        ]
-      }
-    },
-    {
-      "label": "inspect_by_non_flagger_rejected",
-      "tx_hash": "0xf5d44bc2eca3b9806799d0e601ab188975e9a2975d306bb137cf755cff4c0b53",
-      "proposal_id": 1,
-      "execution": "FINISHED_WITH_ERROR",
-      "revert_message": "[EXPECTED] inspection is reserved for the challenger during the first 30 minutes",
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xf5d44bc2eca3b9806799d0e601ab188975e9a2975d306bb137cf755cff4c0b53",
-      "consensus": {
-        "result": "MAJORITY_AGREE",
-        "decision": "ACCEPTED",
-        "appeal_deadline": 1791308279,
-        "initial_validators": 5,
-        "round": "0",
-        "leader_index": "0",
-        "votes_committed": "5",
-        "votes_revealed": "5",
-        "rotations_left": "3",
-        "validators": [
+          "0x6760cDeC573cf38568C59872ee48B6fED41F8A4c",
           "0xA793D9dc0ED9edC1f9F732bB68b5D3AFA934F52D",
-          "0x5cDf4BdDeEDa0e32ED596b94f69AcC0FbB57f264",
-          "0xE52dDB85587585930b1E5f1Fe88fef21CcA49829",
-          "0x5A4230B920b18c4AFD3A28F99Eae669B7F2cdC1e",
-          "0x8D32eb5D0207f7E230C45e7BF0D14B2ED5DA3028"
+          "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E",
+          "0xEEcEC5D1E07Ee40f5cb85aF922178Dc01278013C",
+          "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77"
         ],
         "votes": [
           "AGREE",
@@ -242,25 +162,105 @@
           "AGREE"
         ],
         "votes_hash": [
-          "0xa8136de6aaad1329bde6b8e343b91300ec69690225ceafa51e7384babf99ce6e",
-          "0x2b6bb4bd5741560fa2b6c4c9c0b5fee0b831a96964dc2fb1634910f7913e0997",
-          "0x367c9b2c83f28ff662cf37f2b7182d709c88a6b879667c8fcd9407286404360d",
-          "0x3998bca15517be8e4d7a7d9112789978ea31d82eb744f8684760948b6c6961c1",
-          "0x5c2d3b0ddbe3c47ccea21f3fac242ac886db1617dbe2bb847d8f5c0758d04bac"
+          "0x35557f53441af07c069d5a3b2f03b7682d55f103b95bf9cc88efe64c618891a4",
+          "0x4063deadddb6c7ec8f3f8bb16faf78bdec305a14259fa753c17b1aef4b71797e",
+          "0x57f89d3b747c3af5afb58385a3000124943650d7b1fb20d9bca5f3f9f9fd0ad5",
+          "0x55f5f13ff28fd24f2dbe9e1d9185b0dab5b89047d6f87e73396ae0c0fd9ae7a6",
+          "0x793b341f6d0e239f689789632319434b802ac32903e2a68a81c5a02d9766a868"
+        ]
+      }
+    },
+    {
+      "label": "flag_proposal",
+      "tx_hash": "0x42c9bbe376a4aa40a992800205abd53a52f3e8d380cbd96994ba21309235546a",
+      "proposal_id": 1,
+      "execution": "FINISHED_WITH_RETURN",
+      "revert_message": null,
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x42c9bbe376a4aa40a992800205abd53a52f3e8d380cbd96994ba21309235546a",
+      "consensus": {
+        "result": "MAJORITY_AGREE",
+        "decision": "ACCEPTED",
+        "appeal_deadline": 1791309014,
+        "initial_validators": 5,
+        "round": "0",
+        "leader_index": "0",
+        "votes_committed": "5",
+        "votes_revealed": "5",
+        "rotations_left": "3",
+        "validators": [
+          "0xa0435f618c1F27B254998018AEa8Da5C77187852",
+          "0x5cDf4BdDeEDa0e32ED596b94f69AcC0FbB57f264",
+          "0xE52dDB85587585930b1E5f1Fe88fef21CcA49829",
+          "0xE4E106086F167D75E2270fa5f3680f6ac598d179",
+          "0x8D32eb5D0207f7E230C45e7BF0D14B2ED5DA3028"
+        ],
+        "votes": [
+          "AGREE",
+          "AGREE",
+          "AGREE",
+          "AGREE",
+          "IDLE"
+        ],
+        "votes_hash": [
+          "0xd1bbc33bda8a10fd2d8dfe5599436465d824a87275cb192ca9d800e072bc4ab4",
+          "0xa3c9ce6386c28c7d4fd9bbc362089141c2f30ec01be1ed884093a6534c3b1c52",
+          "0x60778a03cd41f0fc20b4bf6166a43307fda70795b39e4539b4dc4697f70a6cb1",
+          "0xd319f149635d3c01335d54cb67b00ad4cc6bc9a9a35171a519ad549afb4b00bb",
+          "0x592fd774d1f750738d2b43d260af80f589e5babef689c663d3e9610df5b6393e"
+        ]
+      }
+    },
+    {
+      "label": "inspect_by_non_flagger_rejected",
+      "tx_hash": "0x4dedf948ac1305171b22e4136af4c426b84cb212741ffab62b24c2e8ee839c13",
+      "proposal_id": 1,
+      "execution": "FINISHED_WITH_ERROR",
+      "revert_message": "[EXPECTED] inspection is reserved for the challenger during the first 30 minutes",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x4dedf948ac1305171b22e4136af4c426b84cb212741ffab62b24c2e8ee839c13",
+      "consensus": {
+        "result": "MAJORITY_AGREE",
+        "decision": "ACCEPTED",
+        "appeal_deadline": 1791309026,
+        "initial_validators": 5,
+        "round": "0",
+        "leader_index": "0",
+        "votes_committed": "5",
+        "votes_revealed": "5",
+        "rotations_left": "3",
+        "validators": [
+          "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025",
+          "0xEEcEC5D1E07Ee40f5cb85aF922178Dc01278013C",
+          "0xcF5Fd792Df0Dc9d297af75c82B4A0011e8FA1A4A",
+          "0x05d8aFc66B515038712537f99cAAEA73d16f0007",
+          "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E"
+        ],
+        "votes": [
+          "AGREE",
+          "AGREE",
+          "AGREE",
+          "IDLE",
+          "IDLE"
+        ],
+        "votes_hash": [
+          "0x993866611805419a89e242ce3e2975873b4ccdfae38f67751ffce6eeb0a032fe",
+          "0x3fcb6c8fcc7014b7d38abcc0284a2957cf73cd4fe815da28ada7fce7fe87c903",
+          "0x0338cbf258f075aece8c5cce087c3993a634c608b554da2202446c461ddfa273",
+          "0xd974f19062c4e21735a13ee3eadc400e265d6fd43ea9cb0ce3395072ef1b6ac4",
+          "0xa15352694a8767361163bf52c6ba3b71dbcdcf3ea3d889e0e8b725d7116886a7"
         ]
       }
     },
     {
       "label": "inspect_proposal",
-      "tx_hash": "0xbbafb85add000e1adb1e248d6dd3caaaa8ed33742143d9ca56dbd51865d08c7c",
+      "tx_hash": "0x8dd9a9aa5b1cd0ff73f5c7a4e3e919bb326c78122559f108de8d204370650075",
       "proposal_id": 1,
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xbbafb85add000e1adb1e248d6dd3caaaa8ed33742143d9ca56dbd51865d08c7c",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x8dd9a9aa5b1cd0ff73f5c7a4e3e919bb326c78122559f108de8d204370650075",
       "consensus": {
         "result": "MAJORITY_AGREE",
         "decision": "ACCEPTED",
-        "appeal_deadline": 1791308310,
+        "appeal_deadline": 1791309059,
         "initial_validators": 5,
         "round": "0",
         "leader_index": "0",
@@ -268,39 +268,39 @@
         "votes_revealed": "5",
         "rotations_left": "3",
         "validators": [
-          "0xf13c3DfE38C8E206C33F750C24a1b043b63Cb810",
-          "0xcF5Fd792Df0Dc9d297af75c82B4A0011e8FA1A4A",
+          "0x05d8aFc66B515038712537f99cAAEA73d16f0007",
           "0xEEcEC5D1E07Ee40f5cb85aF922178Dc01278013C",
+          "0x1dA3a7de8EA65A318bf88Eb63d3dC55295Dd257E",
           "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025",
-          "0x5cDf4BdDeEDa0e32ED596b94f69AcC0FbB57f264"
+          "0x6760cDeC573cf38568C59872ee48B6fED41F8A4c"
         ],
         "votes": [
+          "AGREE",
+          "AGREE",
+          "AGREE",
           "IDLE",
-          "AGREE",
-          "AGREE",
-          "AGREE",
-          "DISAGREE"
+          "IDLE"
         ],
         "votes_hash": [
-          "0x1f098ded331bd52798f8cf5768abfda66c41d774eea865c735de4f257eec7466",
-          "0xce1363051ecdc6571d4edf4d29c6be68bb751e8614dcde0a6ef6b29f215e3e7d",
-          "0xd7dfc20366fb2e692449ef6fc799fe51322ae124d583ad7d213765cde44391fb",
-          "0x68b4af9b407252678ea62c7cee238320b50878d76a15166227d0b4e440a4d88f",
-          "0x40fcc116bf0d0ae315456d3a1a0362ef23fc03ecc3689725e984a152d603d509"
+          "0x5d1ea1334e4382feabe699c67bbe9a14548003db8ec3ab6e188b96ed16844cb3",
+          "0xc2eb16852029b0e82cee145c958f21e0ad0edff7f3969e9eef020e3dea7636f3",
+          "0x48a50998d6022fe35a93dc0913c392b6a718ec110b8d97b6b965e3ec2222f602",
+          "0xfbdb0d437c9b67204cefccc51bc40fc4a4ec147214ce37e4fc75dfb0ca0c84ef",
+          "0x717ab459127ddbdb1f3314035b7161c7d7b158f2ee56c54db764bdaa33cd0b48"
         ]
       }
     },
     {
       "label": "execute_circuit_breaker",
-      "tx_hash": "0x8a15f23c893bf0a39fafe93044bec11fe4d215061b7163ba978463c7ae6f7221",
+      "tx_hash": "0x26737bc3ea96fba9cad27e4c5621bf1fb63b57965267d3b2d8ca72f1f2a32ae2",
       "proposal_id": 1,
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x8a15f23c893bf0a39fafe93044bec11fe4d215061b7163ba978463c7ae6f7221",
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x26737bc3ea96fba9cad27e4c5621bf1fb63b57965267d3b2d8ca72f1f2a32ae2",
       "consensus": {
         "result": "MAJORITY_AGREE",
         "decision": "ACCEPTED",
-        "appeal_deadline": 1791308329,
+        "appeal_deadline": 1791309076,
         "initial_validators": 5,
         "round": "0",
         "leader_index": "0",
@@ -308,11 +308,11 @@
         "votes_revealed": "5",
         "rotations_left": "3",
         "validators": [
-          "0x5A4230B920b18c4AFD3A28F99Eae669B7F2cdC1e",
           "0x05d8aFc66B515038712537f99cAAEA73d16f0007",
           "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77",
-          "0xA793D9dc0ED9edC1f9F732bB68b5D3AFA934F52D",
-          "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025"
+          "0xf13c3DfE38C8E206C33F750C24a1b043b63Cb810",
+          "0xE52dDB85587585930b1E5f1Fe88fef21CcA49829",
+          "0xA793D9dc0ED9edC1f9F732bB68b5D3AFA934F52D"
         ],
         "votes": [
           "AGREE",
@@ -322,16 +322,16 @@
           "IDLE"
         ],
         "votes_hash": [
-          "0x05ce669ef2c87dad6e1b51108593398b8270834f61ab40b4059333b2e0e7ad1c",
-          "0xd974f19062c4e21735a13ee3eadc400e265d6fd43ea9cb0ce3395072ef1b6ac4",
-          "0xb799741e1a7f6f8c335a996e3fa4fef0b7cd9322ca532ed1ea9f1a2d66e56019",
-          "0x585500ff5426caa5a8bf4d1489c1a5eadf546efde6f7ecefbbbd04b0e764cab0",
-          "0x8d5138bfb0ad6882e83393c4ec84a3ed485c60febf88df7a771a2dbdefd4bcc8"
+          "0x917b4b045e74edc497f9d8ad10f74548d008b405a7567f5f9cbc713c26bed871",
+          "0x1b45e3db7189a44962abefd9e06428f19f7667e80704405d7425eec0d3e16a67",
+          "0xde0e90fb5ccccd067e2a265791aeb6a678426e10e542207fcf33b2cfa08b4eb1",
+          "0x1f5fa4f293ec0dadda2b8bdc90e6dfceb1db5c26deba3b68c5dccf0f6a588058",
+          "0x4bb42cd7ed5f9f4053421fc739ac2f90b41b9524283f1f8299dbc6ab91516cfc"
         ]
       }
     }
   ],
-  "address_explorer_url": "https://explorer-studio-next.genlayer.com/address/0x8b7bB0e8aCddFC15f675DaEFfBAd0c89481FE2C1",
+  "address_explorer_url": "https://explorer-studio-next.genlayer.com/address/0x3f53bAA9468670798dcf8985fF29d52116f8E1A0",
   "dao_key": "61997:0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
   "final_proposal": {
     "appeal_bond": 0,
@@ -344,15 +344,15 @@
     "dao_address": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
     "dao_key": "61997:0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
     "dao_proposal_id": 1,
-    "flagged_at": 1791308293,
+    "flagged_at": 1791309041,
     "forum_url": "https://example.com",
     "id": 1,
-    "inspection_opens_at": 1791310034,
+    "inspection_opens_at": 1791310778,
     "is_reflag": false,
     "payload_hash": "0x980acbf4687d1d5b832bba5209ecfa26e81a33e61345b2f9f611e18ed0fd04b3",
     "prev_flag_id": 0,
-    "proposed_at": 1791308234,
-    "reasoning_hash": "7ca3546704384a02bce711673b048401d02bc59e4c44d04da972990da4569de3",
+    "proposed_at": 1791308978,
+    "reasoning_hash": "91c83acea2923db41eb64229189ae64e0553016793fed703cd7725deafd76875",
     "reserved_bounty": 10000000000000000000,
     "resolution": "",
     "reward_amount": 12000000000000000000,
@@ -361,7 +361,7 @@
     "targets": [
       "0x7070707070707070707070707070707070707070"
     ],
-    "threat_score": 100,
+    "threat_score": 85,
     "values": [
       0
     ]
@@ -371,7 +371,7 @@
       "0xa9059cbb000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000000000000008459508334a94a29c0000"
     ],
     "chain_id": 61997,
-    "committed_at": 1791308206,
+    "committed_at": 1791308952,
     "committed_by": "0x71bba92ada5e1fc0ed325fa739588ecfdc0df166",
     "dao_address": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
     "dao_key": "61997:0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
@@ -397,11 +397,11 @@
     "flagged": true,
     "is_malicious": true,
     "payload_hash": "0x980acbf4687d1d5b832bba5209ecfa26e81a33e61345b2f9f611e18ed0fd04b3",
-    "reasoning": "The declared intent contains placeholder documentation text with no mention of financial transactions, while the decoded calls attempt a massive token transfer (approx 9.99 million tokens) to a burn/external address. This is a severe discrepancy indicating a hidden drain.",
-    "reasoning_hash": "7ca3546704384a02bce711673b048401d02bc59e4c44d04da972990da4569de3",
+    "reasoning": "The declared intent is generic placeholder text about example domain usage, with no substantive description of governance actions. The actual decoded call shows a large token transfer (category: TOKEN_TRANSFER) from a contract to a recipient, moving a significant token amount. Since the intent does not declare any token transfer, function calls, or value movements, the actual call materially contradicts and exceeds the declared intent, indicating a high likelihood of a hidden drain or unauthorized transfer.",
+    "reasoning_hash": "91c83acea2923db41eb64229189ae64e0553016793fed703cd7725deafd76875",
     "record_id": 1,
     "status": "FLAGGED_MALICIOUS",
-    "threat_score": 100
+    "threat_score": 85
   },
   "ledger": {
     "balance": 102000000000000000000,

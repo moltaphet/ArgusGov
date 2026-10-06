@@ -299,7 +299,7 @@ validator votes, is in `deployments/studio-next.json` (the first, pre-commitment
 archived in `studio-next.v1.json`). The live run registers a DAO, commits a proposal, **proves an
 uncommitted flag is rejected on-chain**, flags, inspects and settles through real validator
 consensus, then checks the hash-bound freeze: **true for the committed hash, false for any other**.
-The contract is at `0x8b7bB0e8aCddFC15f675DaEFfBAd0c89481FE2C1`; earlier deployments are archived as
+The contract is at `0x3f53bAA9468670798dcf8985fF29d52116f8E1A0`; earlier deployments are archived as
 `studio-next.v1.json` and `studio-next.v2.json`.
 
 ```bash
