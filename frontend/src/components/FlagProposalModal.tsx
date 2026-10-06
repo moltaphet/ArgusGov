@@ -34,7 +34,6 @@ export function FlagProposalModal({ open, onClose, committed, loading = false, p
   loading?: boolean;
   preselect?: { daoKey: string; proposalId: number };
 }) {
-  const gate = useChainGate(CHALLENGE_BOND);
   const flag = useFlagProposal();
   const dialog = useRef<HTMLDialogElement>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -53,15 +52,19 @@ export function FlagProposalModal({ open, onClose, committed, loading = false, p
     }
   }, [open]);
 
-  // Only proposals nobody has flagged are open for challenge.
-  const openProposals = useMemo(() => committed.filter((c) => c.flagId === 0 && !c.frozen), [committed]);
+  // Open for challenge: never flagged, or judged safe once and not yet re-flagged. A live flag, a
+  // standing freeze and a proposal that has used its re-flag are not.
+  const openProposals = useMemo(() => committed.filter((c) => c.flaggable && !c.frozen), [committed]);
   useEffect(() => {
     if (preselect) setSelected(`${preselect.daoKey}#${preselect.proposalId}`);
   }, [preselect]);
 
   const chosen = openProposals.find((c) => keyOf(c) === selected);
   const actions = useMemo(() => (chosen ? decodeActions(chosen.targets, chosen.calldatas, chosen.values) : []), [chosen]);
-  const bond = CHALLENGE_BOND;
+  // The price is the contract's, per proposal: the base bond, or double for the one allowed re-flag.
+  const bond = chosen && chosen.requiredBond > 0n ? chosen.requiredBond : CHALLENGE_BOND;
+  const isReflag = Boolean(chosen && chosen.requiredBond > CHALLENGE_BOND);
+  const gate = useChainGate(bond);
 
   const canSubmit = gate.ready && Boolean(chosen) && ack && !flag.busy;
   const blocker = !gate.isConnected ? "Connect a wallet to submit."
@@ -72,7 +75,7 @@ export function FlagProposalModal({ open, onClose, committed, loading = false, p
 
   async function submit() {
     if (!chosen) return;
-    const ok = await flag.submit({ daoKey: chosen.daoKey, proposalId: chosen.daoProposalId });
+    const ok = await flag.submit({ daoKey: chosen.daoKey, proposalId: chosen.daoProposalId, bond });
     if (ok) setTimeout(onClose, 1800);
   }
 
@@ -110,6 +113,7 @@ export function FlagProposalModal({ open, onClose, committed, loading = false, p
                       <span className="block text-sm font-medium text-zinc-100">Proposal #{c.daoProposalId}</span>
                       <span className="block truncate font-mono text-[11px] text-zinc-500">{shortAddress(c.daoAddress, 8, 6)} · chain {c.chainId} · {hostOf(c.forumUrl)}</span>
                     </span>
+                    {c.requiredBond > CHALLENGE_BOND && <span className="badge badge-warn font-mono">re-flag · {formatGen(c.requiredBond)} GEN</span>}
                     <span className="badge badge-mute font-mono">{c.targets.length} action{c.targets.length === 1 ? "" : "s"}</span>
                   </button>
                 );
@@ -159,7 +163,7 @@ export function FlagProposalModal({ open, onClose, committed, loading = false, p
 
           <div className="surface-inset p-4">
             <div className="flex items-baseline justify-between">
-              <span className="eyebrow">Challenge bond (exact)</span>
+              <span className="eyebrow">{isReflag ? "Re-flag bond (exact, 2x)" : "Challenge bond (exact)"}</span>
               <span className="figure text-xl font-semibold">{formatGen(bond)} GEN</span>
             </div>
             <div className="mt-2 flex items-center justify-between text-xs">
@@ -169,6 +173,11 @@ export function FlagProposalModal({ open, onClose, committed, loading = false, p
               </span>
             </div>
             {gate.insufficientFunds && <p role="alert" className="mt-2 text-[11px] text-rose-300">Insufficient balance: the bond alone needs {formatGen(bond)} GEN, before network fees.</p>}
+            {isReflag && (
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-400" data-testid="reflag-note">
+                Validators judged this proposal safe once. A proposal can be challenged one more time, at double the bond, and that is the last challenge it allows.
+              </p>
+            )}
             <div className="mt-3 flex gap-2.5 rounded-lg border border-amber-500/25 bg-amber-500/[0.07] p-3 text-xs leading-relaxed text-amber-200/90">
               <AlertTriangle size={15} className="mt-0.5 shrink-0" />
               <span><strong className="font-semibold">{formatGen(bond)} GEN bond will be slashed if proposal is verified safe</strong> (half to the DAO, half burned) and you are locked out of flagging for 4 hours. If the breaker trips, the bond is returned with the bounty reserved at flag time after the 24h appeal window.</span>

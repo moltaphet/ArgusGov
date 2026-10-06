@@ -32,7 +32,7 @@ const STAGES: Stage[] = [
   },
   {
     step: "03", label: "Circuit Breaker", title: "Autonomous Circuit Breaker", icon: <CircuitBoard size={18} />,
-    body: "A score of 75 or more marks the proposal FLAGGED_MALICIOUS and raises its on-chain freeze flag. A DAO's timelock guard reads is_execution_frozen before executing. An appeal moves the record to CHALLENGED_PAUSED while a fresh consensus round re-evaluates it.",
+    body: "A score of 75 or more marks the proposal FLAGGED_MALICIOUS and raises its on-chain freeze flag. A DAO's execution guard calls is_execution_frozen with the hash of the proposal it is about to run, and the freeze applies only if that hash equals the committed one. An appeal moves the record to CHALLENGED_PAUSED while a fresh consensus round re-evaluates it.",
     facts: ["Threshold: score >= 75", "Freeze stays during appeal"],
     num: "from-rose-200 to-rose-500", node: "bg-rose-400", ring: "border-rose-400/50", glow: "shadow-[0_0_34px_-6px_rgba(244,63,94,0.55)]",
   },
@@ -146,7 +146,7 @@ export function AboutSection() {
       <div id="invariants" className="surface mt-8 scroll-mt-6 p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-zinc-100">Protocol invariants</h3>
-          <span className="font-mono text-[11px] text-zinc-500">enforced in contract, checked by 224 tests</span>
+          <span className="font-mono text-[11px] text-zinc-500">enforced in contract, checked by 286 tests</span>
         </div>
         <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           {INVARIANTS.map(([name, text]) => (

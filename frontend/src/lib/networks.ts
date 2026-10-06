@@ -2,7 +2,7 @@ export { EXPLORER_URL, GENLAYER_STUDIO_NEXT_ID, genlayerStudioNext, RPC_URL } fr
 
 // Deployment recorded in deployments/studio-next.json.
 export const ARGUS_ADDRESS = (process.env.NEXT_PUBLIC_ARGUS_ADDRESS ??
-  "0xA67CecB7e333c01727f1Dd6C448FbFF693AcE34D") as `0x${string}`;
+  "0xbF0b2bF4A9eA784149D43cd1Df5887c4999B6261") as `0x${string}`;
 
 // DAOs are identified by "<chain_id>:<0xtimelock>". The dashboard enumerates registered DAOs
 // on-chain; this list adds keys to show before anything is registered or committed.

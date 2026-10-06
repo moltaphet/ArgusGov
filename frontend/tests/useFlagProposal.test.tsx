@@ -6,7 +6,7 @@ import { CHALLENGE_BOND, useFlagProposal } from "@/hooks/useFlagProposal";
 import { GENLAYER_STUDIO_NEXT_ID } from "@/lib/contracts/chain";
 import { readView, sendWrite } from "@/lib/genlayer";
 import { ContractRevertError } from "@/lib/errors";
-import { DAO_KEY, WALLET, makeClient, withQuery } from "./helpers";
+import { DAO_KEY, GEN, WALLET, makeClient, withQuery } from "./helpers";
 
 vi.mock("wagmi", () => ({ useAccount: vi.fn(), useSwitchChain: vi.fn(), useBalance: vi.fn() }));
 vi.mock("@/lib/genlayer", () => ({ sendWrite: vi.fn(), readView: vi.fn() }));
@@ -22,7 +22,7 @@ function chain(overrides: Record<string, unknown> = {}) {
       return v as never;
     }
     if (name === "get_security_pool") return { guardian: "0x1" } as never;
-    if (name === "get_committed_proposal") return { flag_id: 0 } as never;
+    if (name === "get_committed_proposal") return { flag_id: 0, flaggable: true, required_bond: 2n * GEN, reflag_count: 0 } as never;
     return 0 as never;
   });
 }
@@ -114,7 +114,9 @@ describe("useFlagProposal", () => {
   it.each([
     ["an unregistered DAO", { get_security_pool: { guardian: "" } }, "DAO_NOT_REGISTERED"],
     ["a proposal the DAO never committed", { get_committed_proposal: new Error("execution failed") }, "NOT_COMMITTED"],
-    ["a proposal that is already flagged", { get_committed_proposal: { flag_id: 5 } }, "ALREADY_FLAGGED"],
+    ["a proposal that is already flagged", { get_committed_proposal: { flag_id: 5, flaggable: false, required_bond: 0n, reflag_count: 0 } }, "ALREADY_FLAGGED"],
+    ["a proposal whose re-flag is used up", { get_committed_proposal: { flag_id: 5, flaggable: false, required_bond: 0n, reflag_count: 1 } }, "REFLAG_LIMIT"],
+    ["a price that changed to the re-flag bond", { get_committed_proposal: { flag_id: 5, flaggable: true, required_bond: 4n * GEN, reflag_count: 0 } }, "REFLAG_BOND_MISMATCH"],
     ["an active cooling period", { get_cooldown_until: Math.floor(Date.now() / 1000) + 600 }, "COOLING_PERIOD"],
   ])("stops in preflight for %s without reaching the wallet", async (_label, overrides, code) => {
     const hook = await submitAndCollect(overrides);

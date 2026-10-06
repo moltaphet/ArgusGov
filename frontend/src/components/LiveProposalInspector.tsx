@@ -123,6 +123,7 @@ function Detail({ p }: { p: Proposal }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={p.status} />
+          {p.isReflag && <span className="badge badge-warn">Re-flag · 2x bond</span>}
           {p.frozen && <span className="badge badge-crit"><AlertTriangle size={11} /> Execution frozen</span>}
           {consensus.data ? (
             <span className={`badge ${consensus.data.verified ? "badge-safe" : "badge-warn"}`}>

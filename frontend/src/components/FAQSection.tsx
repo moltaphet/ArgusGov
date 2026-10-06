@@ -9,7 +9,7 @@ const FAQS: { q: string; a: ReactNode }[] = [
     a: (
       <>
         <p>Every challenge needs an exact <strong>2.0 GEN bond</strong>, so flagging is never free. If validators judge the proposal safe, the bond is slashed automatically: <strong>50% goes to the DAO&apos;s security pool and 50% to a burn vault</strong> with no withdrawal path.</p>
-        <p>The challenger is then locked out for a <strong>4-hour cooldown</strong>. Independent rate limits (3 flags per caller and 10 per DAO per 24 hours) cap how fast anyone can spam, and a committed proposal can only be flagged once.</p>
+        <p>The challenger is then locked out for a <strong>4-hour cooldown</strong>. Independent rate limits (3 flags per caller and 10 per DAO per 24 hours) cap how fast anyone can spam, and a committed proposal has one live flag at a time. One that validators judged safe can be challenged once more, at double the bond, so a single cheap bond cannot clear a malicious proposal for good.</p>
       </>
     ),
   },
@@ -36,7 +36,7 @@ const FAQS: { q: string; a: ReactNode }[] = [
     a: (
       <>
         <p>ArgusGov is a native GenLayer intelligent contract (Python on GenVM), currently deployed on <strong>GenLayer Studio Next, Chain ID 61997</strong>. It judges a proposal from its target addresses and calldata, so it can assess any proposal that has that shape, including OpenZeppelin Governor and Compound-style timelock proposals.</p>
-        <p>Integration is deliberately explicit: the contract does not watch other chains and ships no framework adapters yet. The guardian commits each proposal, a DAO compares <code>payload_hash</code> with its own proposal hash, and its execution guard queries <code>is_execution_frozen</code>. Because the guardian is whoever registered the DAO first (until the timelock claims the role), integrators should check the guardian address too.</p>
+        <p>Integration is deliberately explicit: the contract does not watch other chains and ships no framework adapters yet. The guardian commits each proposal, a DAO compares <code>payload_hash</code> with its own proposal hash, and its execution guard passes that hash to <code>is_execution_frozen</code>, which answers true only for a payload that matches the commitment byte for byte. Because the guardian is whoever registered the DAO first (until the timelock claims the role), integrators should check the guardian address too.</p>
       </>
     ),
   },

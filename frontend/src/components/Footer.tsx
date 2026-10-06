@@ -69,7 +69,7 @@ export function Footer() {
               <li><FooterLink href="#invariants">Protocol Invariants</FooterLink></li>
               <li>
                 {REPO_URL
-                  ? <FooterLink href={`${REPO_URL}/tree/main/tests`} external>Test Suite (224 Passed)</FooterLink>
+                  ? <FooterLink href={`${REPO_URL}/tree/main/tests`} external>Test Suite (286 Passed)</FooterLink>
                   : <span className="text-[13px] text-zinc-400">Test Suite (224 Passed)</span>}
               </li>
               <li><FooterLink href={GITHUB_URL} external>GitHub</FooterLink></li>

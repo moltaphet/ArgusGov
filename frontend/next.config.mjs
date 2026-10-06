@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // A separate output directory lets a production build run while `next dev` keeps serving from .next.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   webpack: (config) => {
     // wagmi's connector barrel statically reaches @coinbase/cdp-sdk, whose x402
     // payment helpers import optional packages that are not installed. The

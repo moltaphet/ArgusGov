@@ -29,6 +29,8 @@ export interface Proposal {
   rewardAmount: bigint;
   rewardClaimed: boolean;
   resolution: string;
+  /** This record is the one allowed re-flag of a proposal first judged safe. */
+  isReflag: boolean;
   /** On-chain is_execution_frozen for this DAO proposal id. */
   frozen: boolean;
 }
@@ -46,8 +48,16 @@ export interface CommittedProposal {
   payloadHash: string;
   committedBy: string;
   committedAt: number;
-  /** Record id of the live flag, 0 when nobody has flagged it. */
+  /** Record id of the latest flag, 0 when nobody has flagged it. */
   flagId: number;
+  /** Re-flags used after a SAFE verdict (the contract allows one). */
+  reflagCount: number;
+  /** Status of the latest flag, empty when there is none. */
+  flagStatus: string;
+  /** True when a challenge can be raised right now. */
+  flaggable: boolean;
+  /** Bond the next challenge must post, in wei: the base bond, or double after a SAFE verdict. 0 when not flaggable. */
+  requiredBond: bigint;
   frozen: boolean;
 }
 

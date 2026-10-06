@@ -15,7 +15,8 @@
 # proposal by (dao_key, proposal_id) only: they never supply the payload, so a
 # stranger cannot fabricate calldata under a real proposal id and freeze it.
 #
-# Anyone may flag a committed proposal by posting a fixed challenge bond.
+# Anyone may flag a committed proposal by posting a fixed challenge bond. A
+# proposal judged safe can be challenged once more, at double the bond.
 # GenLayer validators then reach consensus on a threat score: each one fetches
 # the forum post, decodes the calldata and native values deterministically, and
 # has an LLM compare declared intent with actual behaviour. A confirmed threat
@@ -66,7 +67,10 @@ MAX_ACTIONS = 10
 MAX_CALLDATA_HEX = 8192
 MAX_URL_LEN = 512
 FORUM_MAX_CHARS = 4000
-REASONING_MAX_CHARS = 1000
+MAX_REASONING_LENGTH = 1000              # characters stored per verdict, suffix included
+TRUNCATION_SUFFIX = "... [TRUNCATED]"
+MAX_REFLAGS = 1                          # one more challenge after a SAFE verdict
+REFLAG_BOND_MULTIPLIER = 2               # the re-flag bond is 2x the base bond
 SCORE_TOLERANCE = 20                     # validator score tolerance
 
 # --- Statuses (stored as plain strings; enums are not storage types) --------
@@ -458,8 +462,33 @@ def _parse_verdict(raw) -> dict:
     # The score decides; a contradictory boolean is a malformed answer.
     if flag != (score >= THREAT_THRESHOLD):
         raise gl.vm.UserError(f"{ERR_LLM} is_malicious contradicts score")
-    reasoning = str(raw.get("reasoning", ""))[:REASONING_MAX_CHARS]
+    reasoning = _bound_reasoning(raw.get("reasoning", ""))
     return {"score": score, "reasoning": reasoning, "is_malicious": flag}
+
+
+def _bound_reasoning(raw) -> str:
+    """Make reasoning safe to store: a string, strictly valid UTF-8, free of control
+    characters, and at most MAX_REASONING_LENGTH characters (the truncation marker
+    included). Validator output is untrusted, so this runs on every path to storage."""
+    text = raw if isinstance(raw, str) else str(raw)
+    # Lone surrogates cannot be encoded as UTF-8; replace them rather than fail later.
+    text = "".join("\ufffd" if 0xD800 <= ord(ch) <= 0xDFFF else ch for ch in text)
+    text = "".join(ch if (ch in "\n\t" or ord(ch) >= 32) and ord(ch) != 0x7F else " " for ch in text)
+    text = text.encode("utf-8").decode("utf-8")
+    if len(text) > MAX_REASONING_LENGTH:
+        text = text[:MAX_REASONING_LENGTH - len(TRUNCATION_SUFFIX)] + TRUNCATION_SUFFIX
+    return text
+
+
+def _reasoning_is_acceptable(raw) -> bool:
+    """A leader's reasoning must already be in bounded, encodable form."""
+    if not isinstance(raw, str) or len(raw) > MAX_REASONING_LENGTH:
+        return False
+    try:
+        raw.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _analyze(forum_url: str, targets: list, values: list, calldatas: list) -> dict:
@@ -506,13 +535,16 @@ def _consensus_verdict(forum_url: str, targets: list, values: list, calldatas: l
             return False
         if not (0 <= lead["score"] <= 100) or lead["is_malicious"] != (lead["score"] >= THREAT_THRESHOLD):
             return False
+        # A leader that returns oversized or unencodable reasoning is rejected outright.
+        if not _reasoning_is_acceptable(data.get("reasoning", "")):
+            return False
         try:
             return _verdicts_equivalent(lead, leader_fn())
         except Exception:
             return False
 
     result = gl.vm.run_nondet(leader_fn, validator_fn)
-    reasoning = str(result["reasoning"])
+    reasoning = _bound_reasoning(result["reasoning"])  # defence in depth: bound again before storage
     return {
         "score": int(result["score"]),
         "reasoning": reasoning,
@@ -538,7 +570,8 @@ class CommittedProposal:
     payload_hash: str
     committed_by: str
     committed_at: u256
-    flag_id: u256          # record id of the live flag, 0 when none
+    flag_id: u256          # record id of the latest flag, 0 when none
+    reflag_count: u256     # re-flags used after a SAFE verdict (max MAX_REFLAGS)
     frozen: bool           # execution freeze consumed by the DAO's guard
 
 
@@ -565,6 +598,7 @@ class ProposalRecord:
     appeal_bond: u256
     flagged_at: u256
     reserved_bounty: u256  # bounty set aside from the pool at flag time
+    prev_flag_id: u256     # the SAFE record this re-flag follows, 0 for a first flag
     reward_amount: u256
     reward_claimed: bool
     resolution: str
@@ -591,13 +625,15 @@ def _view(rec: ProposalRecord) -> dict:
         "appeal_bond": int(rec.appeal_bond),
         "flagged_at": int(rec.flagged_at),
         "reserved_bounty": int(rec.reserved_bounty),
+        "prev_flag_id": int(rec.prev_flag_id),
+        "is_reflag": int(rec.prev_flag_id) != 0,
         "reward_amount": int(rec.reward_amount),
         "reward_claimed": rec.reward_claimed,
         "resolution": rec.resolution,
     }
 
 
-def _committed_view(c: CommittedProposal) -> dict:
+def _committed_view(c: CommittedProposal, flaggable: bool, required_bond: int, flag_status: str) -> dict:
     return {
         "dao_key": c.dao_key,
         "dao_address": c.dao_address,
@@ -611,6 +647,10 @@ def _committed_view(c: CommittedProposal) -> dict:
         "committed_by": c.committed_by,
         "committed_at": int(c.committed_at),
         "flag_id": int(c.flag_id),
+        "reflag_count": int(c.reflag_count),
+        "flag_status": flag_status,
+        "flaggable": flaggable,
+        "required_bond": required_bond,
         "frozen": c.frozen,
     }
 
@@ -673,6 +713,20 @@ class ArgusGov(gl.contract.Contract):
         if key not in self.committed:
             raise _fail("Proposal not committed by DAO")
         return self.committed[key]
+
+    def _flag_requirement(self, c: CommittedProposal) -> tuple:
+        """(flaggable, required bond, is re-flag, status of the latest flag)."""
+        base = int(self.min_challenge_bond)
+        if int(c.flag_id) == 0:
+            return True, base, False, ""
+        status = self.proposals[c.flag_id].status
+        if status == VERIFIED_SAFE and int(c.reflag_count) < MAX_REFLAGS:
+            return True, base * REFLAG_BOND_MULTIPLIER, True, status
+        return False, 0, False, status
+
+    def _committed_dict(self, c: CommittedProposal) -> dict:
+        flaggable, bond, _, status = self._flag_requirement(c)
+        return _committed_view(c, flaggable, bond, status)
 
     def _save_committed(self, c: CommittedProposal) -> None:
         self.committed[_commit_key(c.dao_key, int(c.dao_proposal_id))] = c
@@ -751,7 +805,7 @@ class ArgusGov(gl.contract.Contract):
     @gl.public.view
     def get_committed_proposal(self, dao_key: str, proposal_id: int) -> dict:
         key, _, _ = _split_dao_key(dao_key)
-        return _committed_view(self._get_committed(key, proposal_id))
+        return self._committed_dict(self._get_committed(key, proposal_id))
 
     @gl.public.view
     def get_committed_count(self) -> int:
@@ -761,7 +815,7 @@ class ArgusGov(gl.contract.Contract):
     def get_committed_at(self, index: int) -> dict:
         if index < 0 or index >= len(self.committed_keys):
             raise _fail("committed index out of range")
-        return _committed_view(self.committed[self.committed_keys[index]])
+        return self._committed_dict(self.committed[self.committed_keys[index]])
 
     @gl.public.view
     def get_proposal_verdict(self, dao_key: str, proposal_id: int) -> dict:
@@ -785,12 +839,22 @@ class ArgusGov(gl.contract.Contract):
         }
 
     @gl.public.view
-    def is_execution_frozen(self, dao_key: str, dao_proposal_id: int) -> bool:
-        """The hook a DAO's execution guard queries before running a proposal. Only a
-        proposal the DAO itself committed can ever be frozen."""
+    def is_execution_frozen(self, dao_key: str, proposal_id: int, expected_payload_hash: bytes) -> bool:
+        """The hook a DAO's execution guard queries before running a proposal. True only
+        when the proposal is committed, frozen, AND its committed payload hash equals the
+        hash the caller expects, byte for byte. A guard passes the hash of the proposal it
+        is about to execute, so a forged commitment (for example by a squatter holding the
+        guardian seat) can never block genuine execution."""
         key, _, _ = _split_dao_key(dao_key)
-        ck = _commit_key(key, dao_proposal_id)
-        return ck in self.committed and self.committed[ck].frozen
+        ck = _commit_key(key, proposal_id)
+        if ck not in self.committed:
+            return False
+        c = self.committed[ck]
+        if not c.frozen:
+            return False
+        if not isinstance(expected_payload_hash, (bytes, bytearray)):
+            return False
+        return bytes(expected_payload_hash) == bytes.fromhex(c.payload_hash[2:])
 
     @gl.public.view
     def get_claimable(self, who_hex: str) -> int:
@@ -917,6 +981,7 @@ class ArgusGov(gl.contract.Contract):
             committed_by=caller,
             committed_at=u256(self._now()),
             flag_id=u256(0),
+            reflag_count=u256(0),
             frozen=False,
         )
         self.committed_keys.append(ck)
@@ -927,14 +992,23 @@ class ArgusGov(gl.contract.Contract):
     def flag_proposal(self, dao_key: str, proposal_id: int) -> int:
         """Challenge a proposal the DAO has committed. The caller names it and posts
         the bond; the payload comes only from the commitment. Returns the ArgusGov
-        record id used by every later call."""
+        record id used by every later call.
+
+        A proposal judged VERIFIED_SAFE can be challenged once more (one re-flag), at
+        twice the bond, so a single cheap bond cannot clear a malicious proposal for good.
+        A re-flag opens a fresh record in REGISTERED, awaiting inspection."""
         key, _, address = _split_dao_key(dao_key)
         self._require_registered(key)
         c = self._get_committed(key, proposal_id)
         if int(c.flag_id) != 0:
-            raise _fail("this proposal is already flagged")
-        if int(gl.message.value) != int(self.min_challenge_bond):
-            raise _fail("challenge bond must equal min_challenge_bond")
+            if self.proposals[c.flag_id].status != VERIFIED_SAFE:
+                raise _fail("this proposal is already flagged")
+            if int(c.reflag_count) >= MAX_REFLAGS:
+                raise _fail("re-flag limit reached for this proposal")
+        _, required, is_reflag, _ = self._flag_requirement(c)
+        if int(gl.message.value) != required:
+            raise _fail("re-flag bond must equal 2x min_challenge_bond" if is_reflag
+                        else "challenge bond must equal min_challenge_bond")
 
         caller = self._caller()
         now = self._now()
@@ -952,9 +1026,12 @@ class ArgusGov(gl.contract.Contract):
 
         self.next_id = u256(int(self.next_id) + 1)
         rid = int(self.next_id)
-        bond = int(gl.message.value)
+        bond = required
+        prev_id = int(c.flag_id) if is_reflag else 0
         self.total_escrow = u256(int(self.total_escrow) + bond)
         c.flag_id = u256(rid)
+        if is_reflag:
+            c.reflag_count = u256(int(c.reflag_count) + 1)
         self._save_committed(c)
         self.proposals[u256(rid)] = ProposalRecord(
             id=u256(rid),
@@ -977,6 +1054,7 @@ class ArgusGov(gl.contract.Contract):
             appeal_bond=u256(0),
             flagged_at=u256(0),
             reserved_bounty=u256(reserved),
+            prev_flag_id=u256(prev_id),
             reward_amount=u256(0),
             reward_claimed=False,
             resolution="",
@@ -998,7 +1076,11 @@ class ArgusGov(gl.contract.Contract):
         rec.resolution = EXPIRED
         self._save(rec)
         c = self._get_committed(rec.dao_key, int(rec.dao_proposal_id))
-        c.flag_id = u256(0)
+        # Back to the previous state: a re-flag falls back to the SAFE record it followed (and
+        # does not burn the re-flag), a first flag frees the proposal entirely.
+        c.flag_id = rec.prev_flag_id
+        if int(rec.prev_flag_id) != 0 and int(c.reflag_count) > 0:
+            c.reflag_count = u256(int(c.reflag_count) - 1)
         self._save_committed(c)
         self.total_escrow = u256(int(self.total_escrow) - bond)
         self._credit(rec.challenger, bond)

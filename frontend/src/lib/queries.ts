@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { readView } from "./genlayer";
 import { MONITORED_DAOS } from "./networks";
 import { toBig } from "./format";
+import { payloadHashToBytes } from "./payloadHash";
 import type { CommittedProposal, DaoSummary, Ledger, Proposal, ProposalStatus, SecurityPool } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -33,6 +34,7 @@ function toProposal(raw: any, frozen: boolean): Proposal {
     rewardAmount: toBig(raw.reward_amount),
     rewardClaimed: Boolean(raw.reward_claimed),
     resolution: String(raw.resolution ?? ""),
+    isReflag: Boolean(raw.is_reflag),
     frozen,
   };
 }
@@ -51,6 +53,10 @@ export function toCommitted(raw: any): CommittedProposal {
     committedBy: String(raw.committed_by ?? ""),
     committedAt: Number(raw.committed_at),
     flagId: Number(raw.flag_id),
+    reflagCount: Number(raw.reflag_count ?? 0),
+    flagStatus: String(raw.flag_status ?? ""),
+    flaggable: Boolean(raw.flaggable),
+    requiredBond: toBig(raw.required_bond),
     frozen: Boolean(raw.frozen),
   };
 }
@@ -89,7 +95,9 @@ async function probeProposals(): Promise<Proposal[]> {
     }
     let frozen = false;
     try {
-      frozen = Boolean(await readView<boolean>("is_execution_frozen", [raw.dao_key, BigInt(raw.dao_proposal_id)]));
+      // The freeze check is bound to a payload hash. Asking with this record's own (committed) hash
+      // answers "is this exact payload frozen?", which is what the dashboard shows.
+      frozen = Boolean(await readView<boolean>("is_execution_frozen", [raw.dao_key, BigInt(raw.dao_proposal_id), payloadHashToBytes(String(raw.payload_hash))]));
     } catch {
       /* freeze flag is best-effort */
     }

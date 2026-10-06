@@ -183,6 +183,14 @@ class Env:
         self.as_(self.other)
         return self.c.resolve_appeal(rid)
 
+    def frozen(self, pid: int = 42, dao: str = DAO_KEY, phash=None) -> bool:
+        """is_execution_frozen as a DAO's guard calls it: with the hash of the proposal it is about
+        to execute. By default that is the hash the DAO committed; pass `phash` (bytes) to ask
+        about some other payload."""
+        if phash is None:
+            phash = bytes.fromhex(self.c.get_committed_proposal(dao, pid)["payload_hash"][2:])
+        return self.c.is_execution_frozen(dao, pid, phash)
+
     def claimable(self, who) -> int:
         return self.c.get_claimable(self.key(who))
 

@@ -30,7 +30,7 @@ function healthyChain(overrides: Record<string, unknown> = {}) {
       return value as never;
     }
     if (name === "get_security_pool") return { guardian: "0x1" } as never;
-    if (name === "get_committed_proposal") return { flag_id: 0 } as never;
+    if (name === "get_committed_proposal") return { flag_id: 0, flaggable: true, required_bond: 2n * GEN, reflag_count: 0 } as never;
     return 0 as never;
   });
 }
@@ -38,15 +38,80 @@ function healthyChain(overrides: Record<string, unknown> = {}) {
 describe("flag proposal modal", () => {
   beforeEach(() => healthyChain());
 
-  it("offers only committed proposals nobody has flagged", () => {
+  it("offers only proposals the contract says can be challenged right now", () => {
     setup(10n * GEN, [
       committedProposal({ daoProposalId: 1 }),
-      committedProposal({ daoProposalId: 2, flagId: 7 }),          // already flagged
-      committedProposal({ daoProposalId: 3, frozen: true }),       // already frozen
+      committedProposal({ daoProposalId: 2, flagId: 7, flaggable: false, requiredBond: 0n, flagStatus: "REGISTERED" }),            // live flag
+      committedProposal({ daoProposalId: 3, frozen: true, flaggable: false, requiredBond: 0n, flagStatus: "FLAGGED_MALICIOUS" }),  // frozen
+      committedProposal({ daoProposalId: 4, flagId: 9, flaggable: false, requiredBond: 0n, reflagCount: 1, flagStatus: "VERIFIED_SAFE" }), // re-flag used
     ]);
     const options = screen.getAllByRole("radio");
     expect(options).toHaveLength(1);
     expect(options[0]).toHaveTextContent("Proposal #1");
+  });
+
+  it("lists a proposal judged safe once as a re-flag at double the bond", async () => {
+    setup(10n * GEN, [committedProposal({ daoProposalId: 5, flagId: 3, flaggable: true, requiredBond: 4n * GEN, flagStatus: "VERIFIED_SAFE" })]);
+    expect(screen.getByRole("radio")).toHaveTextContent(/re-flag · 4 gen/i);
+    await userEvent.click(screen.getByRole("radio"));
+    expect(screen.getByTestId("reflag-note")).toHaveTextContent(/last challenge/i);
+    expect(screen.getByText("4 GEN")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /post 4 gen bond/i })).toBeInTheDocument();
+  });
+
+  it("holds a re-flag to the doubled balance: 3 GEN covers a first flag but not a re-flag", async () => {
+    setup(3n * GEN, [committedProposal({ daoProposalId: 5, flagId: 3, requiredBond: 4n * GEN, flagStatus: "VERIFIED_SAFE" })]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("radio"));
+    await user.click(screen.getByRole("checkbox"));
+    expect(screen.getByRole("button", { name: /post 4 gen bond/i })).toBeDisabled();
+    expect(screen.getByTestId("submit-blocker")).toHaveTextContent(/below the 4 gen bond/i);
+  });
+
+  it("sends exactly 4.0 GEN for a re-flag, still naming only the proposal", async () => {
+    vi.mocked(sendWrite).mockImplementation(async (opts) => {
+      await opts.preflight?.();
+      return { hash: "0xhash" };
+    });
+    healthyChain({ get_committed_proposal: { flag_id: 3, flaggable: true, required_bond: 4n * GEN, reflag_count: 0 } });
+    setup(10n * GEN, [committedProposal({ flagId: 3, requiredBond: 4n * GEN, flagStatus: "VERIFIED_SAFE" })]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("radio"));
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: /post 4 gen bond/i }));
+    await waitFor(() => expect(sendWrite).toHaveBeenCalledTimes(1));
+    const call = vi.mocked(sendWrite).mock.calls[0][0];
+    expect(call.value).toBe(4n * GEN);
+    expect(call.args).toEqual([DAO_KEY, 42n]);
+  });
+
+  it("stops before signing when the chain says the re-flag limit was reached meanwhile", async () => {
+    healthyChain({ get_committed_proposal: { flag_id: 9, flaggable: false, required_bond: 0n, reflag_count: 1 } });
+    vi.mocked(sendWrite).mockImplementation(async (opts) => {
+      await opts.preflight?.();
+      throw new Error("preflight should have thrown");
+    });
+    setup(10n * GEN, [committedProposal({ flagId: 3, requiredBond: 4n * GEN, flagStatus: "VERIFIED_SAFE" })]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("radio"));
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: /post 4 gen bond/i }));
+    expect(await screen.findByText("Re-flag limit reached")).toBeInTheDocument();
+  });
+
+  it("stops before signing when the price changed since the list loaded", async () => {
+    healthyChain({ get_committed_proposal: { flag_id: 3, flaggable: true, required_bond: 4n * GEN, reflag_count: 0 } });
+    vi.mocked(sendWrite).mockImplementation(async (opts) => {
+      await opts.preflight?.();
+      throw new Error("preflight should have thrown");
+    });
+    // The list still shows the 2 GEN price; the chain now wants 4 GEN.
+    setup(10n * GEN, [committedProposal()]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("radio"));
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: /post 2 gen bond/i }));
+    expect(await screen.findByText("Re-flag bond required")).toBeInTheDocument();
   });
 
   it("has no calldata or target inputs: the challenger cannot supply a payload", () => {

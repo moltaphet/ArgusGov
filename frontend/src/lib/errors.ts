@@ -22,6 +22,8 @@ interface Rule { match: RegExp; code: string; title: string; message: string }
 
 const RULES: Rule[] = [
   { match: /cooling period/i, code: "COOLING_PERIOD", title: "Active cooling period", message: "A recent challenge from this wallet was judged a false alarm. Flagging is locked for 4 hours after that." },
+  { match: /re-flag bond must equal/i, code: "REFLAG_BOND_MISMATCH", title: "Re-flag bond required", message: "A proposal judged safe can be challenged once more, at exactly twice the base bond (4.0 GEN)." },
+  { match: /re-flag limit reached/i, code: "REFLAG_LIMIT", title: "Re-flag limit reached", message: "This proposal has already been challenged a second time and judged safe again, so it cannot be flagged further." },
   { match: /challenge bond must equal/i, code: "BOND_MISMATCH", title: "Insufficient bond", message: "The challenge bond must be exactly 2.0 GEN, no more and no less." },
   { match: /appeal bond must equal/i, code: "APPEAL_BOND_MISMATCH", title: "Wrong appeal bond", message: "An appeal needs exactly twice the challenger's bond (4.0 GEN)." },
   { match: /rate limit exceeded for caller/i, code: "CALLER_RATE_LIMIT", title: "Rate limit reached", message: "This wallet has used its 3 flags for the current 24-hour window." },

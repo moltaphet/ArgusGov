@@ -130,7 +130,10 @@ def run_direct() -> int:
         score = argus.inspect_proposal(rid)
         status = argus.execute_circuit_breaker(rid)
         print(f"  consensus score={score} -> {status}")
-        print(f"  execution frozen for DAO proposal 102: {argus.is_execution_frozen(DAO_KEY, 102)}")
+        committed_hash = bytes.fromhex(argus.get_committed_proposal(DAO_KEY, 102)["payload_hash"][2:])
+        print(f"  execution frozen for DAO proposal 102 (guard passes the committed hash): "
+              f"{argus.is_execution_frozen(DAO_KEY, 102, committed_hash)}")
+        print(f"  ...and for a different payload hash: {argus.is_execution_frozen(DAO_KEY, 102, bytes(32))}")
         ledger(argus)
         at(5 * 3600 + 24 * 3600)
         call(challenger)
@@ -311,7 +314,11 @@ def run_network(endpoint: str, forum_url: str) -> int:
     record["committed_proposal"] = read("get_committed_proposal", [DAO_KEY, 1])
     record["verdict"] = read("get_proposal_verdict", [DAO_KEY, 1])
     record["ledger"] = read("get_ledger", [])
-    record["execution_frozen"] = read("is_execution_frozen", [DAO_KEY, 1])
+    # An execution guard passes the hash of the proposal it is about to run. A frozen proposal
+    # blocks only a payload whose hash equals the committed one.
+    committed_hash = bytes.fromhex(record["committed_proposal"]["payload_hash"][2:])
+    record["execution_frozen"] = read("is_execution_frozen", [DAO_KEY, 1, committed_hash])
+    record["execution_frozen_for_a_different_payload"] = read("is_execution_frozen", [DAO_KEY, 1, bytes(32)])
     record["solvent"] = read("solvency", [])
     save()
     print(f"  final status: {proposal['status']}  frozen={record['execution_frozen']}")

@@ -25,6 +25,7 @@ BOUNTY = POOL // 10
 OTHER_ADDRESS = "0x" + "d2" * 20
 OTHER_DAO = f"{CHAIN_ID}:{OTHER_ADDRESS}"            # a second DAO on the same chain
 SAME_ADDRESS_OTHER_CHAIN = f"137:{TIMELOCK}"          # the first DAO's address on another chain
+NO_HASH = bytes(32)                                   # a payload hash nobody committed
 TIMELOCK_SENDER = bytes.fromhex("d1" * 20)            # an account whose address is the timelock's
 
 
@@ -521,7 +522,7 @@ def test_safe_proposal_matching_intent_slashes_challenger(dao):
     assert dao.stake() == POOL + BOND // 2            # 50% to the DAO pool
     assert dao.c.get_ledger()["burn_vault"] == BOND // 2  # 50% to the burn vault
     assert dao.claimable(dao.challenger) == 0         # nothing refunded
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is False
+    assert dao.frozen(42) is False
     dao.assert_conserved()
 
 
@@ -535,7 +536,7 @@ def test_hidden_drain_trips_circuit_breaker_and_pays_bounty(dao):
     assert p["status"] == "FLAGGED_MALICIOUS"
     assert p["reward_amount"] == BOND + BOUNTY
     assert dao.stake() == POOL - BOUNTY
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True
+    assert dao.frozen(42) is True
     dao.assert_conserved()
 
     warp(dao.vm, DAY)  # appeal window closes unchallenged
@@ -544,7 +545,7 @@ def test_hidden_drain_trips_circuit_breaker_and_pays_bounty(dao):
     assert dao.payout(dao.challenger) == BOND + BOUNTY
     dao.assert_conserved()
     assert dao.stake() == POOL - BOUNTY
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True  # freeze is permanent
+    assert dao.frozen(42) is True  # freeze is permanent
 
 
 def test_unauthorized_proxy_upgrade_is_flagged(dao):
@@ -556,7 +557,7 @@ def test_unauthorized_proxy_upgrade_is_flagged(dao):
     dao.as_(dao.other)
     assert dao.c.inspect_proposal(rid) == 94
     assert dao.settle(rid) == "FLAGGED_MALICIOUS"
-    assert dao.c.is_execution_frozen(DAO_KEY, 42)
+    assert dao.frozen(42)
 
 
 def test_hidden_mint_and_ownership_transfer_are_flagged(dao):
@@ -647,9 +648,9 @@ def test_claim_payout_with_no_balance_reverts(dao):
 def test_execution_freeze_is_scoped_to_one_dao_proposal(dao):
     dao.register(dao=OTHER_DAO)
     dao.flag_inspect_settle(95, pid=42)
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True
-    assert dao.c.is_execution_frozen(DAO_KEY, 43) is False
-    assert dao.c.is_execution_frozen(OTHER_DAO, 42) is False
+    assert dao.frozen(42) is True
+    assert dao.frozen(43, phash=NO_HASH) is False
+    assert dao.frozen(42, OTHER_DAO, phash=NO_HASH) is False
 
 
 # =============================================================================
@@ -735,7 +736,7 @@ def test_guardian_appeal_pauses_the_proposal_and_keeps_it_frozen(dao):
     assert p["status"] == "CHALLENGED_PAUSED"
     assert p["appeal_bond"] == APPEAL_BOND
     assert p["appellant"] == dao.key(dao.guardian)
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True
+    assert dao.frozen(42) is True
     dao.assert_conserved()
 
 
@@ -804,7 +805,7 @@ def test_appeal_rejected_upholds_flag_and_slashes_appellant(dao):
     assert dao.claimable(dao.challenger) == BOND + BOUNTY + APPEAL_BOND // 2
     assert dao.c.get_ledger()["burn_vault"] == APPEAL_BOND // 2
     assert dao.claimable(dao.guardian) == 0
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True
+    assert dao.frozen(42) is True
     dao.assert_conserved()
 
 
@@ -819,10 +820,10 @@ def test_appeal_accepted_refunds_appellant_and_clears_the_verdict(dao):
     assert dao.stake() == POOL + BOND // 2                       # bounty restored + half the slash
     assert dao.c.get_ledger()["burn_vault"] == BOND // 2
     # The freeze is lifted by an explicit, permissionless unfreeze_proposal call.
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True
+    assert dao.frozen(42) is True
     dao.as_(dao.other)
     dao.c.unfreeze_proposal(DAO_KEY, 42)
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is False
+    assert dao.frozen(42) is False
     assert dao.c.get_cooldown_until(dao.key(dao.challenger)) > 0  # treated as a false alarm
     dao.assert_conserved()
 
@@ -948,7 +949,7 @@ def test_views_do_not_mutate_state(dao):
     before = (dao.c.get_ledger(), dao.c.get_proposal(rid))
     for _ in range(3):
         dao.c.get_security_pool(DAO_KEY)
-        dao.c.is_execution_frozen(DAO_KEY, 42)
+        dao.frozen(42)
         dao.c.get_claimable(dao.key(dao.challenger))
         dao.c.solvency()
     assert (dao.c.get_ledger(), dao.c.get_proposal(rid)) == before
@@ -1013,7 +1014,7 @@ def test_regression_1_flagging_an_uncommitted_proposal_reverts(dao):
     with dao.vm.expect_revert("[EXPECTED] Proposal not committed by DAO"):
         dao.c.flag_proposal(DAO_KEY, 42)
     assert dao.c.get_ledger()["total_escrow"] == 0
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is False
+    assert dao.frozen(42, phash=NO_HASH) is False
 
 
 def test_regression_2_a_flag_cannot_carry_a_forged_payload(dao):
@@ -1054,7 +1055,7 @@ def test_regression_poc_attacker_cannot_freeze_a_real_proposal_with_fabricated_c
     dao.as_(dao.challenger)
     dao.c.inspect_proposal(rid)
     assert dao.settle(rid) == "VERIFIED_SAFE"
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is False
+    assert dao.frozen(42) is False
     assert dao.claimable(dao.other) == 0 and dao.c.get_ledger()["burn_vault"] == BOND // 2
     dao.assert_conserved()
 
@@ -1071,8 +1072,8 @@ def test_regression_the_same_address_on_another_chain_cannot_be_used_to_freeze_i
     rid = dao.flag(who=dao.challenger, pid=42, dao=SAME_ADDRESS_OTHER_CHAIN, commit=False)
     dao.inspect(rid, 95)
     dao.settle(rid)
-    assert dao.c.is_execution_frozen(SAME_ADDRESS_OTHER_CHAIN, 42) is True
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is False
+    assert dao.frozen(42, SAME_ADDRESS_OTHER_CHAIN) is True
+    assert dao.frozen(42) is False
     assert dao.stake() == POOL                                              # the real pool is untouched
 
 
@@ -1131,7 +1132,7 @@ def test_regression_4_native_value_drain_reaches_the_validators_and_is_caught(da
     dao.as_(dao.other)
     assert dao.c.inspect_proposal(rid) == 96
     assert dao.settle(rid) == "FLAGGED_MALICIOUS"
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True
+    assert dao.frozen(42) is True
     assert dao.c.get_proposal(rid)["values"] == [drain]
 
 
@@ -1228,13 +1229,13 @@ def test_withdrawing_everything_leaves_a_solvent_ledger_and_a_usable_dao(dao):
 def test_regression_6_unfreeze_restores_the_proposal_after_a_successful_appeal(dao):
     rid = dao.flag_inspect_settle(88)
     dao.appeal(rid)
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True                   # frozen while the appeal runs
+    assert dao.frozen(42) is True                   # frozen while the appeal runs
     dao.resolve(rid, 12)                                                    # validators overturn the verdict
     assert dao.c.get_proposal(rid)["resolution"] == "APPEAL_ACCEPTED"
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True                   # lifting it is a separate, explicit step
+    assert dao.frozen(42) is True                   # lifting it is a separate, explicit step
     dao.as_(dao.other)
     dao.c.unfreeze_proposal(DAO_KEY, 42)
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is False
+    assert dao.frozen(42) is False
     assert dao.c.get_committed_proposal(DAO_KEY, 42)["frozen"] is False
     dao.assert_conserved()
 
@@ -1253,7 +1254,7 @@ def test_a_standing_malicious_verdict_cannot_be_unfrozen(dao):
     dao.as_(dao.other)
     with dao.vm.expect_revert("freeze is still justified"):
         dao.c.unfreeze_proposal(DAO_KEY, 42)
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is True
+    assert dao.frozen(42) is True
 
 
 def test_unfreeze_requires_a_frozen_committed_proposal(dao):
@@ -1370,7 +1371,399 @@ def test_the_verdict_tracks_the_appeal_outcome(dao):
 
 
 def test_execution_freeze_requires_a_commitment(dao):
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is False
-    assert dao.c.is_execution_frozen(OTHER_DAO, 42) is False
+    assert dao.frozen(42, phash=NO_HASH) is False
+    assert dao.frozen(42, OTHER_DAO, phash=NO_HASH) is False
     dao.commit(pid=42)
-    assert dao.c.is_execution_frozen(DAO_KEY, 42) is False                  # committed, not yet judged
+    assert dao.frozen(42) is False                  # committed, not yet judged
+
+
+# =============================================================================
+# 9. Squat-and-freeze: the freeze check is bound to the payload hash
+# =============================================================================
+GENUINE_CALLDATA = transfer_calldata(dao_addr(0xA11CE), 5_000 * ATTO)
+
+
+def _genuine_hash(**over) -> bytes:
+    """The hash of the proposal a DAO's guard is about to execute on the origin chain."""
+    args = dict(targets=[TOKEN], values=[0], calldatas=[GENUINE_CALLDATA], forum_url=FORUM_URL)
+    args.update(over)
+    return bytes.fromhex(payload_hash(args["targets"], args["values"], args["calldatas"], args["forum_url"])[2:])
+
+
+def _squatted_and_frozen(dao):
+    """A squatter holds the guardian seat, commits a FORGED payload under proposal 42 and gets it frozen."""
+    dao.commit(pid=42, calldatas=[transfer_calldata(EVIL, 10**30)])           # the forgery
+    rid = dao.flag(who=dao.other, pid=42, commit=False)
+    dao.inspect(rid, 95)
+    dao.settle(rid)
+    assert dao.frozen(42) is True                                             # frozen, but only the forged commitment
+    return rid
+
+
+def test_a_forged_commitment_cannot_block_the_genuine_proposal(dao):
+    _squatted_and_frozen(dao)
+    assert dao.frozen(42, phash=_genuine_hash()) is False                     # the real execution is not blocked
+    assert dao.frozen(42) is True                                             # the forgery is frozen only against itself
+
+
+def test_the_freeze_applies_only_to_the_exact_committed_hash(dao):
+    _squatted_and_frozen(dao)
+    committed = bytes.fromhex(dao.c.get_committed_proposal(DAO_KEY, 42)["payload_hash"][2:])
+    assert dao.c.is_execution_frozen(DAO_KEY, 42, committed) is True
+    flipped_first = bytes([committed[0] ^ 1]) + committed[1:]
+    flipped_last = committed[:-1] + bytes([committed[-1] ^ 0x80])
+    for wrong in (flipped_first, flipped_last, NO_HASH, committed[::-1]):
+        assert dao.c.is_execution_frozen(DAO_KEY, 42, wrong) is False
+
+
+@pytest.mark.parametrize("variant", [
+    {"targets": [PROXY]}, {"values": [1]}, {"calldatas": [transfer_calldata(dao_addr(0xA11CE), 5_001 * ATTO)]},
+    {"forum_url": "https://forum.example-dao.org/t/another-post"},
+])
+def test_changing_any_single_field_of_the_payload_defeats_a_forged_freeze(dao, variant):
+    dao.commit(pid=42, **{"targets": [TOKEN], "calldatas": [GENUINE_CALLDATA], **{k: v for k, v in variant.items() if k != "forum_url"}},
+               url=variant.get("forum_url", FORUM_URL))
+    rid = dao.flag(who=dao.other, pid=42, commit=False)
+    dao.inspect(rid, 95)
+    dao.settle(rid)
+    assert dao.frozen(42) is True
+    unmodified = _genuine_hash()
+    assert dao.frozen(42, phash=unmodified) is False
+
+
+@pytest.mark.parametrize("bad", [b"", bytes(31), bytes(33), bytes(64)])
+def test_hashes_of_the_wrong_length_never_match(dao, bad):
+    dao.flag_inspect_settle(95)
+    committed = bytes.fromhex(dao.c.get_committed_proposal(DAO_KEY, 42)["payload_hash"][2:])
+    assert dao.c.is_execution_frozen(DAO_KEY, 42, bad) is False
+    assert dao.c.is_execution_frozen(DAO_KEY, 42, committed + b"\x00") is False        # a longer value with the right prefix
+    assert dao.c.is_execution_frozen(DAO_KEY, 42, committed[:-1]) is False             # and a truncated one
+
+
+def test_a_hex_string_is_not_accepted_in_place_of_bytes(dao):
+    dao.flag_inspect_settle(95)
+    as_text = dao.c.get_committed_proposal(DAO_KEY, 42)["payload_hash"]
+    assert dao.c.is_execution_frozen(DAO_KEY, 42, as_text) is False
+
+
+def test_a_matching_hash_is_still_false_unless_the_proposal_is_frozen(dao):
+    pid = dao.commit(pid=42)                                                     # committed, never flagged
+    assert dao.frozen(pid) is False
+    rid = dao.flag(pid=pid, commit=False)
+    assert dao.frozen(pid) is False                                              # flagged is not frozen
+    dao.inspect(rid, 5)
+    dao.settle(rid)
+    assert dao.frozen(pid) is False                                              # judged safe
+    assert dao.c.is_execution_frozen(DAO_KEY, 999, bytes(32)) is False           # uncommitted
+
+
+def test_a_genuine_malicious_freeze_still_blocks_the_matching_execution(dao):
+    dao.flag_inspect_settle(97)
+    assert dao.frozen(42, phash=_genuine_hash(calldatas=[transfer_calldata(EVIL, 5_000 * ATTO)])) is True
+
+
+def test_unfreezing_clears_the_hash_bound_check(dao):
+    rid = dao.flag_inspect_settle(80)
+    dao.appeal(rid)
+    dao.resolve(rid, 5)
+    dao.as_(dao.other)
+    dao.c.unfreeze_proposal(DAO_KEY, 42)
+    assert dao.frozen(42) is False
+
+
+def test_the_freeze_check_rejects_a_malformed_dao_key(dao):
+    with dao.vm.expect_revert("invalid dao_key"):
+        dao.c.is_execution_frozen(TIMELOCK, 42, bytes(32))
+
+
+# =============================================================================
+# 10. Re-flagging a VERIFIED_SAFE proposal
+# =============================================================================
+def _safe(dao, pid=42, **kw):
+    """Commit, flag, inspect and settle as safe. Returns the first record id."""
+    return dao.flag_inspect_settle(5, pid=pid, **kw)
+
+
+def test_the_committed_view_says_when_and_at_what_price_a_proposal_can_be_flagged(dao):
+    pid = dao.commit(pid=42)
+    c = dao.c.get_committed_proposal(DAO_KEY, pid)
+    assert (c["flaggable"], c["required_bond"], c["flag_status"], c["reflag_count"]) == (True, BOND, "", 0)
+    rid = dao.flag(pid=pid, commit=False)
+    c = dao.c.get_committed_proposal(DAO_KEY, pid)
+    assert (c["flaggable"], c["required_bond"], c["flag_status"]) == (False, 0, "REGISTERED")
+    dao.inspect(rid, 5)
+    dao.settle(rid)
+    c = dao.c.get_committed_proposal(DAO_KEY, pid)
+    assert (c["flaggable"], c["required_bond"], c["flag_status"], c["reflag_count"]) == (True, 2 * BOND, "VERIFIED_SAFE", 0)
+
+
+def test_a_safe_proposal_can_be_reflagged_once_at_double_the_bond(dao):
+    first = _safe(dao)
+    second = dao.flag(who=dao.other, pid=42, commit=False, value=2 * BOND)
+    p = dao.c.get_proposal(second)
+    assert (p["status"], p["challenger_bond"], p["prev_flag_id"], p["is_reflag"]) == ("REGISTERED", 2 * BOND, first, True)
+    assert p["payload_hash"] == dao.c.get_proposal(first)["payload_hash"]       # still the DAO's own commitment
+    assert dao.c.get_proposal(first)["status"] == "VERIFIED_SAFE"               # history is kept
+    c = dao.c.get_committed_proposal(DAO_KEY, 42)
+    assert (c["flag_id"], c["reflag_count"], c["flaggable"]) == (second, 1, False)
+    dao.assert_conserved()
+
+
+@pytest.mark.parametrize("value", [0, BOND, 2 * BOND - 1, 2 * BOND + 1, 3 * BOND, 4 * BOND])
+def test_a_reflag_needs_exactly_double_the_bond(dao, value):
+    _safe(dao)
+    dao.as_(dao.other, value)
+    with dao.vm.expect_revert("re-flag bond must equal 2x min_challenge_bond"):
+        dao.c.flag_proposal(DAO_KEY, 42)
+
+
+def test_a_reflag_that_finds_the_exploit_freezes_the_proposal_and_pays_double(dao):
+    """The scenario the rule exists for: one cheap bond cannot clear a malicious proposal for good."""
+    _safe(dao)
+    rid = dao.flag(who=dao.other, pid=42, commit=False, value=2 * BOND)
+    dao.inspect(rid, 96)
+    assert dao.settle(rid) == "FLAGGED_MALICIOUS"
+    assert dao.frozen(42) is True
+    pool_after_first = POOL + BOND // 2                                           # the first challenger's slashed half
+    reserved = dao.c.get_proposal(rid)["reserved_bounty"]
+    assert reserved == pool_after_first // 10
+    assert dao.c.get_proposal(rid)["reward_amount"] == 2 * BOND + reserved
+    warp(dao.vm, 3 * DAY)
+    dao.as_(dao.other)
+    assert dao.c.claim_reward(rid) == 2 * BOND + reserved
+    dao.assert_conserved()
+
+
+def test_a_reflag_judged_safe_slashes_the_doubled_bond(dao):
+    _safe(dao)
+    burned_before = dao.c.get_ledger()["burn_vault"]
+    stake_before = dao.stake()
+    rid = dao.flag(who=dao.other, pid=42, commit=False, value=2 * BOND)
+    dao.inspect(rid, 4)
+    assert dao.settle(rid) == "VERIFIED_SAFE"
+    assert dao.stake() == stake_before + BOND                                    # half of the 4 GEN
+    assert dao.c.get_ledger()["burn_vault"] == burned_before + BOND
+    assert dao.claimable(dao.other) == 0
+    dao.assert_conserved()
+
+
+def test_a_third_flag_is_rejected_whatever_the_bond(dao):
+    _safe(dao)
+    rid = dao.flag(who=dao.other, pid=42, commit=False, value=2 * BOND)
+    dao.inspect(rid, 4)
+    dao.settle(rid)                                                              # safe twice
+    c = dao.c.get_committed_proposal(DAO_KEY, 42)
+    assert (c["flaggable"], c["required_bond"], c["reflag_count"]) == (False, 0, 1)
+    for value in (BOND, 2 * BOND, 4 * BOND):
+        dao.as_(dao.guardian, value)
+        with dao.vm.expect_revert("re-flag limit reached"):
+            dao.c.flag_proposal(DAO_KEY, 42)
+
+
+@pytest.mark.parametrize("state", ["REGISTERED", "ANALYZING", "FLAGGED_MALICIOUS", "CHALLENGED_PAUSED", "RESOLVED_DISPUTED"])
+def test_only_a_safe_verdict_can_be_reflagged(dao, state):
+    rid = dao.flag(pid=42)
+    if state != "REGISTERED":
+        dao.inspect(rid, 90)
+    if state in ("FLAGGED_MALICIOUS", "CHALLENGED_PAUSED", "RESOLVED_DISPUTED"):
+        dao.settle(rid)
+    if state in ("CHALLENGED_PAUSED", "RESOLVED_DISPUTED"):
+        dao.appeal(rid)
+    if state == "RESOLVED_DISPUTED":
+        dao.resolve(rid, 5)                                                      # an accepted appeal is a final ruling
+    for value in (BOND, 2 * BOND):
+        dao.as_(dao.other, value)
+        with dao.vm.expect_revert("already flagged"):
+            dao.c.flag_proposal(DAO_KEY, 42)
+
+
+def test_the_first_challenger_must_wait_out_the_cooling_period_to_reflag(dao):
+    _safe(dao)
+    pid_challenger = dao.challenger
+    dao.as_(pid_challenger, 2 * BOND)
+    with dao.vm.expect_revert("cooling period"):
+        dao.c.flag_proposal(DAO_KEY, 42)
+    warp(dao.vm, 4 * HOUR - 1)
+    dao.as_(pid_challenger, 2 * BOND)
+    with dao.vm.expect_revert("cooling period"):
+        dao.c.flag_proposal(DAO_KEY, 42)
+    warp(dao.vm, 4 * HOUR)                                                       # inclusive boundary
+    assert dao.flag(who=pid_challenger, pid=42, commit=False, value=2 * BOND) == 2
+
+
+def test_a_reflagged_malicious_proposal_needs_a_doubled_appeal_bond(dao):
+    _safe(dao)
+    rid = dao.flag(who=dao.other, pid=42, commit=False, value=2 * BOND)
+    dao.inspect(rid, 93)
+    dao.settle(rid)
+    dao.as_(dao.guardian, APPEAL_BOND)                                           # 2x the BASE bond is not enough
+    with dao.vm.expect_revert("appeal bond must equal 2x"):
+        dao.c.appeal_flag(rid)
+    dao.appeal(rid, value=4 * BOND)
+    assert dao.c.get_proposal(rid)["appeal_bond"] == 4 * BOND
+    dao.resolve(rid, 99)                                                         # rejected: challenger gets reward + half of 8 GEN
+    assert dao.claimable(dao.other) == 2 * BOND + dao.c.get_proposal(rid)["reserved_bounty"] + 2 * BOND
+    dao.assert_conserved()
+
+
+def test_an_abandoned_reflag_expires_back_to_the_safe_record_without_burning_the_reflag(dao):
+    first = _safe(dao)
+    second = dao.flag(who=dao.other, pid=42, commit=False, value=2 * BOND)
+    warp(dao.vm, 8 * DAY)
+    dao.as_(dao.guardian)
+    assert dao.c.expire_flag(second) == 2 * BOND                                 # the doubled bond comes back in full
+    assert dao.claimable(dao.other) == 2 * BOND
+    c = dao.c.get_committed_proposal(DAO_KEY, 42)
+    assert (c["flag_id"], c["reflag_count"], c["flag_status"], c["required_bond"]) == (first, 0, "VERIFIED_SAFE", 2 * BOND)
+    third = dao.flag(who=dao.guardian, pid=42, commit=False, value=2 * BOND)    # the reflag is still available
+    assert dao.c.get_proposal(third)["prev_flag_id"] == first
+    dao.assert_conserved()
+
+
+def test_an_expired_first_flag_still_frees_the_proposal_at_the_normal_bond(dao):
+    rid = dao.flag(pid=42)
+    warp(dao.vm, 8 * DAY)
+    dao.as_(dao.other)
+    dao.c.expire_flag(rid)
+    c = dao.c.get_committed_proposal(DAO_KEY, 42)
+    assert (c["flag_id"], c["required_bond"], c["reflag_count"]) == (0, BOND, 0)
+
+
+def test_reflags_reserve_a_bounty_and_count_against_the_rate_limits(dao):
+    _safe(dao)
+    stake = dao.stake()
+    dao.flag(who=dao.other, pid=42, commit=False, value=2 * BOND)
+    assert dao.c.get_security_pool(DAO_KEY)["locked"] == stake // 10
+    for i in range(2):                                                           # the caller window is shared with first flags
+        dao.flag(who=dao.other, pid=100 + i, calldatas=[transfer_calldata(EVIL, 500 + i)])
+    pid = dao.commit(pid=200, calldatas=[transfer_calldata(EVIL, 999)])
+    dao.as_(dao.other, BOND)
+    with dao.vm.expect_revert("rate limit exceeded for caller"):                 # 3 flags per caller per window, reflag included
+        dao.c.flag_proposal(DAO_KEY, pid)
+
+
+# =============================================================================
+# 11. Bounded, sanitised validator reasoning
+# =============================================================================
+SUFFIX = "... [TRUNCATED]"
+CAP = 1000
+
+
+def _inspect_with_reasoning(dao, reasoning, score=90):
+    rid = dao.flag()
+    mock_forum(dao.vm, "x")
+    mock_verdict(dao.vm, score, reasoning=reasoning)
+    dao.as_(dao.other)
+    dao.c.inspect_proposal(rid)
+    return rid
+
+
+def _stored(dao):
+    return dao.c.get_proposal_verdict(DAO_KEY, 42)
+
+
+def test_oversized_reasoning_is_truncated_with_a_marker_to_exactly_the_cap(dao):
+    original = "A" * 5000
+    _inspect_with_reasoning(dao, original)
+    stored = _stored(dao)["reasoning"]
+    assert len(stored) == CAP
+    assert stored.endswith(SUFFIX)
+    assert stored[:CAP - len(SUFFIX)] == original[:CAP - len(SUFFIX)]            # the head is preserved
+
+
+@pytest.mark.parametrize("length,truncated", [(0, False), (1, False), (CAP - 1, False), (CAP, False), (CAP + 1, True), (CAP * 50, True)])
+def test_the_cap_boundary(dao, length, truncated):
+    original = "z" * length
+    _inspect_with_reasoning(dao, original)
+    stored = _stored(dao)["reasoning"]
+    assert len(stored) <= CAP
+    assert stored.endswith(SUFFIX) is truncated
+    if not truncated:
+        assert stored == original
+
+
+def test_the_stored_hash_commits_to_the_bounded_text_not_the_original(dao):
+    import hashlib
+    _inspect_with_reasoning(dao, "B" * 4000)
+    v = _stored(dao)
+    assert v["reasoning_hash"] == hashlib.sha256(v["reasoning"].encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize("unit", ["\u00e9", "\u4e2d", "\U0001F600"])
+def test_multibyte_text_is_cut_on_a_character_boundary(dao, unit):
+    """The cap counts characters, so a 2-, 3- or 4-byte character is never split into invalid UTF-8."""
+    _inspect_with_reasoning(dao, unit * 3000)
+    stored = _stored(dao)["reasoning"]
+    assert len(stored) == CAP and stored.endswith(SUFFIX)
+    assert stored.encode("utf-8").decode("utf-8") == stored
+    assert stored[:CAP - len(SUFFIX)] == unit * (CAP - len(SUFFIX))
+
+
+def test_lone_surrogates_are_replaced_so_the_text_is_valid_utf8(dao):
+    _inspect_with_reasoning(dao, "bad \ud800 middle \udfff end")
+    stored = _stored(dao)["reasoning"]
+    assert stored == "bad \ufffd middle \ufffd end"
+    stored.encode("utf-8")                                                       # must not raise
+
+
+def test_control_characters_are_removed_but_newlines_and_tabs_survive(dao):
+    _inspect_with_reasoning(dao, "a\x00b\x07c\x7fd\nline\ttab")
+    assert _stored(dao)["reasoning"] == "a b c d\nline\ttab"
+
+
+@pytest.mark.parametrize("raw,expected", [(12345, "12345"), (["a", "b"], "['a', 'b']"), (None, "None"), (True, "True")])
+def test_non_string_reasoning_is_coerced_and_bounded(dao, raw, expected):
+    rid = dao.flag()
+    mock_forum(dao.vm, "x")
+    set_llm(dao.vm, r".*", {"score": 90, "reasoning": raw, "is_malicious": True})
+    dao.as_(dao.other)
+    dao.c.inspect_proposal(rid)
+    assert _stored(dao)["reasoning"] == expected
+
+
+def test_missing_reasoning_is_stored_as_empty(dao):
+    rid = dao.flag()
+    mock_forum(dao.vm, "x")
+    set_llm(dao.vm, r".*", {"score": 90, "is_malicious": True})
+    dao.as_(dao.other)
+    dao.c.inspect_proposal(rid)
+    assert _stored(dao)["reasoning"] == ""
+
+
+def test_an_appeal_re_evaluation_is_bounded_too(dao):
+    rid = dao.flag_inspect_settle(90)
+    dao.appeal(rid)
+    mock_forum(dao.vm, "x")
+    mock_verdict(dao.vm, 95, reasoning="Q" * 9000)
+    dao.as_(dao.other)
+    dao.c.resolve_appeal(rid)
+    stored = _stored(dao)["reasoning"]
+    assert len(stored) == CAP and stored.endswith(SUFFIX)
+
+
+def _leader(reasoning, score=90):
+    return {"score": score, "is_malicious": score >= 75, "reasoning": reasoning}
+
+
+def test_a_validator_rejects_a_leader_result_with_oversized_reasoning(dao):
+    rid = dao.flag()
+    dao.inspect(rid, 90)
+    mock_verdict(dao.vm, 90)
+    assert dao.vm.run_validator(leader_result=_leader("x" * CAP)) is True            # exactly at the cap: fine
+    assert dao.vm.run_validator(leader_result=_leader("x" * (CAP + 1))) is False     # one over: rejected
+    assert dao.vm.run_validator(leader_result=_leader("x" * 10_000_000)) is False    # a hostile leader cannot force huge storage
+
+
+@pytest.mark.parametrize("reasoning", [12345, ["x"], {"a": 1}, b"bytes", "lone \ud800 surrogate"])
+def test_a_validator_rejects_unencodable_or_non_string_reasoning(dao, reasoning):
+    rid = dao.flag()
+    dao.inspect(rid, 90)
+    mock_verdict(dao.vm, 90)
+    assert dao.vm.run_validator(leader_result=_leader(reasoning)) is False
+
+
+def test_a_validator_accepts_a_leader_result_without_reasoning_text(dao):
+    rid = dao.flag()
+    dao.inspect(rid, 90)
+    mock_verdict(dao.vm, 90)
+    assert dao.vm.run_validator(leader_result={"score": 90, "is_malicious": True}) is True

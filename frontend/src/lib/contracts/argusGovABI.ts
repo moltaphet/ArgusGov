@@ -5,6 +5,9 @@
 // arguments, so this table describes name, mutability, payability and argument
 // types, and drives the typed call signatures below.
 //
+// `is_execution_frozen` takes the payload hash the caller is about to execute and is true only
+// when it equals the committed one byte for byte, so a forged commitment cannot block genuine execution.
+//
 // A DAO is identified by `dao_key = "<chain_id>:<0xtimelock>"`, and a proposal is
 // flagged by (dao_key, proposal_id) alone: its payload comes from what the DAO
 // committed with `commit_proposal`, never from the challenger.
@@ -41,7 +44,10 @@ export const argusGovAbi = [
   { name: "get_committed_proposal", kind: "view", payable: false, inputs: [{ name: "dao_key", type: "string" }, { name: "proposal_id", type: "uint256" }] },
   { name: "get_committed_count", kind: "view", payable: false, inputs: [] },
   { name: "get_committed_at", kind: "view", payable: false, inputs: [{ name: "index", type: "uint256" }] },
-  { name: "is_execution_frozen", kind: "view", payable: false, inputs: [{ name: "dao_key", type: "string" }, { name: "dao_proposal_id", type: "uint256" }] },
+  {
+    name: "is_execution_frozen", kind: "view", payable: false,
+    inputs: [{ name: "dao_key", type: "string" }, { name: "proposal_id", type: "uint256" }, { name: "expected_payload_hash", type: "bytes" }],
+  },
   { name: "get_claimable", kind: "view", payable: false, inputs: [{ name: "who_hex", type: "string" }] },
   { name: "get_cooldown_until", kind: "view", payable: false, inputs: [{ name: "who_hex", type: "string" }] },
   { name: "whoami", kind: "view", payable: false, inputs: [] },

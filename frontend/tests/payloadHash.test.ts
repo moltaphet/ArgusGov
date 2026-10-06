@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { computePayloadHash } from "@/lib/payloadHash";
+import { computePayloadHash, payloadHashToBytes } from "@/lib/payloadHash";
 import { EVIL, GEN, TOKEN, transferCalldata } from "./helpers";
 
 const A1 = "0x" + "a1".repeat(20);
@@ -36,4 +36,20 @@ describe("payload hash parity with the contract", () => {
     ]);
     expect(hashes.size).toBe(5);
   });
+});
+
+describe("payloadHashToBytes", () => {
+  it("returns the 32 raw bytes is_execution_frozen compares against", () => {
+    const hash = "0x980acbf4687d1d5b832bba5209ecfa26e81a33e61345b2f9f611e18ed0fd04b3";
+    const bytes = payloadHashToBytes(hash);
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes.length).toBe(32);
+    expect(Array.from(bytes.slice(0, 4))).toEqual([0x98, 0x0a, 0xcb, 0xf4]);
+    expect(Array.from(bytes.slice(-2))).toEqual([0x04, 0xb3]);
+  });
+
+  it.each(["", "0x", "0x1234", "980acbf4687d1d5b832bba5209ecfa26e81a33e61345b2f9f611e18ed0fd04b3", "0x" + "zz".repeat(32), "0x" + "ab".repeat(33)])(
+    "refuses %j instead of sending a wrong-length hash", (bad) => {
+      expect(() => payloadHashToBytes(bad)).toThrow();
+    });
 });
