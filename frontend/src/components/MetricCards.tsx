@@ -70,7 +70,7 @@ export function MetricCards({ ledger, daos, proposals, loading }: {
       </Card>
 
       <Card icon={<Coins size={14} />} title="Protected value" tint="gold"
-        foot={<>{impact.drainsThwarted} drain{impact.drainsThwarted === 1 ? "" : "s"} thwarted{impact.unlimitedApprovals ? ` · ${impact.unlimitedApprovals} unlimited approval${impact.unlimitedApprovals === 1 ? "" : "s"}` : ""}</>}>
+        foot={<>{impact.drainsThwarted} drain{impact.drainsThwarted === 1 ? "" : "s"} thwarted{impact.nativeProtected > 0n ? ` · ${impact.nativeProtected.toLocaleString("en-US")} native` : ""}{impact.unlimitedApprovals ? ` · ${impact.unlimitedApprovals} unlimited approval${impact.unlimitedApprovals === 1 ? "" : "s"}` : ""}</>}>
         <Amount value={proposals ? impact.tokensProtected.toLocaleString("en-US") : na} unit="tokens" />
         <div className="mt-2.5 text-[11px] text-zinc-500" title="Sum of transfers, mints and withdrawals in frozen proposals; 18 decimals assumed">Held back by frozen proposals</div>
       </Card>

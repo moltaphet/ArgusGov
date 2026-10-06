@@ -27,21 +27,20 @@ export function DaoList({ daos, loading, error, selected, onSelect }: {
       {error && <p className="px-1 text-xs text-rose-300">Could not reach Studio Next. Retrying…</p>}
       <ul className="space-y-2">
         {daos?.map((dao) => {
-          const active = dao.proposals.filter((p) => ["REGISTERED", "ANALYZING"].includes(p.status)).length;
-          const isSelected = selected === dao.address;
+                    const isSelected = selected === dao.key;
           return (
-            <li key={dao.address}>
+            <li key={dao.key}>
               <div
                 role="button" tabIndex={0} aria-pressed={isSelected}
-                onClick={() => onSelect(isSelected ? null : dao.address)}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect(isSelected ? null : dao.address))}
+                onClick={() => onSelect(isSelected ? null : dao.key)}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect(isSelected ? null : dao.key))}
                 className={`group cursor-pointer rounded-xl border p-3 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 ${isSelected ? "border-indigo-400/40 bg-indigo-400/[0.07]" : "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.14] hover:bg-white/[0.04]"}`}
               >
                 <div className="flex items-start gap-3">
                   <Identicon address={dao.address} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-0.5 font-mono text-[12px] text-zinc-200">
-                      {shortAddress(dao.address, 8, 6)}<CopyButton value={dao.address} label="Copy timelock address" />
+                      {shortAddress(dao.address, 8, 6)}<CopyButton value={dao.address} label="Copy timelock address" /><span className="ml-1 rounded bg-white/[0.06] px-1.5 text-[10px] text-zinc-400">chain {dao.chainId}</span>
                     </div>
                     <div className="mt-0.5 text-[11px] text-zinc-500">
                       {dao.pool ? <>Pool <span className="font-mono text-zinc-300">{formatGen(dao.pool.stake)}</span> GEN</> : "Not registered"}
@@ -56,8 +55,8 @@ export function DaoList({ daos, loading, error, selected, onSelect }: {
                   </span>
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.05] pt-2.5 text-center">
-                  <Stat label="Flags" value={dao.proposals.length} />
-                  <Stat label="Active" value={active} />
+                  <Stat label="Committed" value={dao.committed.length} />
+                  <Stat label="Flagged" value={dao.proposals.length} />
                   <Stat label="Frozen" value={dao.proposals.filter((p) => p.frozen).length} tone="text-rose-300" />
                 </div>
               </div>

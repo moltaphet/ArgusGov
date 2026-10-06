@@ -1,42 +1,21 @@
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 import { NextRequest, NextResponse } from "next/server";
+import { clientKey, SlidingWindowLimiter } from "@/lib/rateLimit";
+import { assertPublicUrl, fetchPinned, SsrfError } from "@/lib/ssrf";
 
-// Server-side reader for the "declared intent" panel: fetches the forum post the
-// way a validator does and returns plain text. Because it makes outbound
-// requests on behalf of a visitor, it refuses anything that is not a public
-// http(s) host (resolved IPs included) and never follows redirects blindly.
+// Server-side reader for the "declared intent" panel: fetches the forum post the way a
+// validator does and returns plain text. It makes outbound requests on behalf of a
+// visitor, so it is hardened against SSRF: strict host validation (including octal and hex
+// spellings), every resolved address checked, the validated address pinned for the
+// connection (no DNS rebinding window), redirects re-validated hop by hop, and a
+// per-client sliding-window rate limit.
 export const dynamic = "force-dynamic";
 
-const MAX_BYTES = 512 * 1024;
 const MAX_CHARS = 4000;
 const MAX_REDIRECTS = 3;
+const RATE_LIMIT = 10; // requests
+const RATE_WINDOW_MS = 60_000;
 
-function isPrivateIPv4(ip: string): boolean {
-  const [a, b] = ip.split(".").map(Number);
-  return (
-    a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) || (a === 192 && b === 0) || (a === 198 && (b === 18 || b === 19)) || a >= 224
-  );
-}
-
-function isPrivateIp(ip: string): boolean {
-  if (isIP(ip) === 4) return isPrivateIPv4(ip);
-  const v6 = ip.toLowerCase();
-  if (v6.startsWith("::ffff:")) return isPrivateIPv4(v6.slice(7));
-  return v6 === "::1" || v6 === "::" || v6.startsWith("fc") || v6.startsWith("fd") || v6.startsWith("fe8") ||
-    v6.startsWith("fe9") || v6.startsWith("fea") || v6.startsWith("feb");
-}
-
-async function assertPublic(url: URL): Promise<void> {
-  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Only http(s) URLs are allowed.");
-  if (url.username || url.password) throw new Error("Credentials in URLs are not allowed.");
-  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (host === "localhost" || /\.(local|localhost|internal|lan)$/.test(host)) throw new Error("Host is not public.");
-  const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true });
-  if (addresses.length === 0 || addresses.some((a) => isPrivateIp(a.address))) throw new Error("Host is not public.");
-}
+const limiter = new SlidingWindowLimiter(RATE_LIMIT, RATE_WINDOW_MS);
 
 const ENTITIES: Record<string, string> = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
 
@@ -63,39 +42,37 @@ function toReadableText(body: string): string {
     .trim();
 }
 
+function json(body: Record<string, unknown>, status = 200, headers: Record<string, string> = {}) {
+  return NextResponse.json(body, { status, headers });
+}
+
 export async function GET(request: NextRequest) {
+  const limit = limiter.check(clientKey(request.headers));
+  const rateHeaders = { "RateLimit-Limit": String(limit.limit), "RateLimit-Remaining": String(limit.remaining) };
+  if (!limit.allowed) {
+    const retryAfter = String(Math.max(1, Math.ceil(limit.retryAfterMs / 1000)));
+    return json({ available: false, status: 429, text: "", error: "Rate limit exceeded. Try again shortly." }, 429, { ...rateHeaders, "Retry-After": retryAfter });
+  }
+
   const raw = request.nextUrl.searchParams.get("url") ?? "";
   try {
-    let url = new URL(raw);
+    let target = await assertPublicUrl(raw);
     for (let hop = 0; ; hop++) {
-      await assertPublic(url);
-      const res = await fetch(url, {
-        redirect: "manual",
-        signal: AbortSignal.timeout(8000),
-        headers: { "user-agent": "ArgusGov-Inspector/0.1", accept: "text/html,text/plain" },
-      });
-      if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
-        if (hop >= MAX_REDIRECTS) throw new Error("Too many redirects.");
-        url = new URL(res.headers.get("location")!, url);
+      const res = await fetchPinned(target.url, target.pin);
+      const location = res.headers.location;
+      if (res.status >= 300 && res.status < 400 && typeof location === "string") {
+        if (hop >= MAX_REDIRECTS) throw new SsrfError("Too many redirects.");
+        // A redirect is a brand new request: validate, resolve and pin it again.
+        target = await assertPublicUrl(new URL(location, target.url).toString());
         continue;
       }
-      if (!res.ok) return NextResponse.json({ available: false, status: res.status, text: "" });
-      const reader = res.body?.getReader();
-      let received = 0;
-      const chunks: Uint8Array[] = [];
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        received += value.length;
-        chunks.push(value);
-        if (received > MAX_BYTES) { await reader.cancel(); break; }
-      }
-      const body = Buffer.concat(chunks).toString("utf-8");
-      const text = toReadableText(body).slice(0, MAX_CHARS);
-      return NextResponse.json({ available: text.length > 0, status: res.status, text });
+      if (res.status < 200 || res.status >= 300) return json({ available: false, status: res.status, text: "" }, 200, rateHeaders);
+      const text = toReadableText(res.body.toString("utf-8")).slice(0, MAX_CHARS);
+      return json({ available: text.length > 0, status: res.status, text }, 200, rateHeaders);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Fetch failed.";
-    return NextResponse.json({ available: false, status: 0, text: "", error: message });
+    const blocked = error instanceof SsrfError;
+    const message = blocked ? error.message : "The post could not be fetched.";
+    return json({ available: false, status: 0, text: "", error: message }, blocked ? 400 : 200, rateHeaders);
   }
 }

@@ -8,9 +8,12 @@ import { afterEach } from "vitest";
 afterEach(() => cleanup());
 
 // jsdom does not implement the dialog methods; the modal also feature-detects them.
-HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
-  this.setAttribute("open", "");
-};
-HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
-  this.removeAttribute("open");
-};
+// Server-side tests run in a Node environment that has no DOM at all.
+if (typeof HTMLDialogElement !== "undefined") {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute("open");
+  };
+}

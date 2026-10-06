@@ -18,7 +18,9 @@ POOL = 100 * ATTO
 HOUR = 3600
 T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
+CHAIN_ID = 1
 TIMELOCK = "0x" + "d1" * 20
+DAO_KEY = f"{CHAIN_ID}:{TIMELOCK}"
 TOKEN = "0x" + "70" * 20
 PROXY = "0x" + "9a" * 20
 EVIL = "0x" + "ee" * 20
@@ -52,6 +54,20 @@ def upgrade_to_calldata(impl: str) -> str:
 
 def transfer_ownership_calldata(new_owner: str) -> str:
     return "0x" + "f2fde38b" + _word_addr(new_owner)
+
+
+def payload_hash(targets, values, calldatas, forum_url) -> str:
+    """Independent reference for the contract's commitment hash: Solidity
+    keccak256(abi.encode(address[], uint256[], bytes[], bytes32)) as Governor contracts use it."""
+    from eth_abi import encode
+    from eth_utils import keccak
+
+    desc = keccak(text=forum_url)
+    encoded = encode(
+        ["address[]", "uint256[]", "bytes[]", "bytes32"],
+        [list(targets), list(values), [bytes.fromhex(c[2:]) for c in calldatas], desc],
+    )
+    return "0x" + keccak(encoded).hex()
 
 
 def unknown_calldata() -> str:
@@ -96,6 +112,8 @@ class Env:
         self.challenger = challenger
         self.other = other
         self.deposited = 0  # independent tally: value in minus value out
+        self._pid = 42      # next auto-assigned DAO proposal id
+        self.last_hash = ""
 
     def as_(self, who, value: int = 0):
         self.vm.sender = who
@@ -105,20 +123,34 @@ class Env:
         self.as_(who)
         return self.c.whoami()
 
-    def register(self, stake: int = POOL, dao: str = TIMELOCK):
+    def register(self, stake: int = POOL, dao: str = DAO_KEY):
         self.as_(self.guardian, stake)
         self.c.register_dao(dao)
         self.deposited += stake
         self.as_(self.guardian)
 
-    def flag(self, who=None, pid: int = 42, targets=None, calldatas=None, dao: str = TIMELOCK,
-             url: str = FORUM_URL, value: int = BOND) -> int:
+    def commit(self, pid=None, targets=None, values=None, calldatas=None, dao: str = DAO_KEY,
+               url: str = FORUM_URL, who=None) -> int:
+        """Commit a proposal payload as the DAO guardian (or `who`). Returns the proposal id used."""
+        if pid is None:
+            pid = self._pid
+            self._pid += 1
+        targets = targets if targets is not None else [TOKEN]
+        calldatas = calldatas if calldatas is not None else [transfer_calldata(EVIL, 5_000 * ATTO)]
+        values = values if values is not None else [0] * len(targets)
+        self.as_(who or self.guardian)
+        self.last_hash = self.c.commit_proposal(dao, pid, targets, values, calldatas, url)
+        return pid
+
+    def flag(self, who=None, pid=None, targets=None, values=None, calldatas=None, dao: str = DAO_KEY,
+             url: str = FORUM_URL, value: int = BOND, commit: bool = True) -> int:
+        """Commit a payload (unless `commit` is False) and flag it. Returns the ArgusGov record id."""
+        if commit:
+            pid = self.commit(pid, targets, values, calldatas, dao, url)
+        elif pid is None:
+            raise ValueError("pid is required when commit=False")
         self.as_(who or self.challenger, value)
-        rid = self.c.flag_proposal(
-            dao, pid, url,
-            targets if targets is not None else [TOKEN],
-            calldatas if calldatas is not None else [transfer_calldata(EVIL, 5_000 * ATTO)],
-        )
+        rid = self.c.flag_proposal(dao, pid)
         self.deposited += value
         self.as_(who or self.challenger)
         return rid
@@ -154,8 +186,8 @@ class Env:
     def claimable(self, who) -> int:
         return self.c.get_claimable(self.key(who))
 
-    def stake(self) -> int:
-        return self.c.get_security_pool(TIMELOCK)["stake"]
+    def stake(self, dao: str = DAO_KEY) -> int:
+        return self.c.get_security_pool(dao)["stake"]
 
     def payout(self, who) -> int:
         self.as_(who)

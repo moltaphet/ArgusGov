@@ -11,8 +11,10 @@ export interface DecodedAction {
   severity: Severity;
   details: { label: string; value: string }[];
   summary: string;
-  /** Raw uint256 amount for value-moving calls, when the call carries one. */
+  /** Raw uint256 token amount for value-moving calls, when the call carries one. */
   amountRaw?: bigint;
+  /** Native currency (wei) sent with the call. */
+  value: bigint;
 }
 
 export const MAX_UINT256 = 2n ** 256n - 1n;
@@ -53,22 +55,26 @@ function amountLabel(raw: bigint): string {
   return `${raw.toString()} raw  (${whole.toLocaleString("en-US")} tokens at 18 decimals)`;
 }
 
-export function decodeAction(index: number, target: string, calldata: string): DecodedAction {
+export function decodeAction(index: number, target: string, calldata: string, value: bigint = 0n): DecodedAction {
   const body = calldata.replace(/^0x/, "");
-  const base = { index, target, selector: "", signature: "", details: [] as DecodedAction["details"] };
+  const base = { index, target, selector: "", signature: "", details: [] as DecodedAction["details"], value };
+  const valueDetail = value > 0n ? [{ label: "native value", value: `${value.toString()} wei` }] : [];
   if (body === "") {
-    return { ...base, category: "NATIVE_TRANSFER", severity: "high", signature: "(empty calldata)",
-      summary: `Plain native-token send to ${target}` };
+    if (value === 0n) {
+      return { ...base, category: "NOOP", severity: "info", signature: "(empty calldata)", summary: `Empty call to ${target}: no effect` };
+    }
+    return { ...base, details: valueDetail, category: "NATIVE_TRANSFER", severity: "high", signature: "(plain native send)",
+      summary: `Plain native-token send of ${value.toString()} wei to ${target}` };
   }
   if (body.length < 8) {
-    return { ...base, category: "MALFORMED", severity: "high", signature: "(malformed)",
+    return { ...base, details: valueDetail, category: "MALFORMED", severity: "high", signature: "(malformed)",
       summary: "Calldata shorter than a selector" };
   }
   const selector = body.slice(0, 8);
   const args = body.slice(8);
   const known = SELECTORS[selector];
   if (!known) {
-    return { ...base, selector: `0x${selector}`, category: "UNKNOWN", severity: "high",
+    return { ...base, details: valueDetail, selector: `0x${selector}`, category: "UNKNOWN", severity: "high",
       signature: "(unknown selector)", summary: `Call with unrecognised selector 0x${selector}` };
   }
   const details: DecodedAction["details"] = [];
@@ -109,10 +115,10 @@ export function decodeAction(index: number, target: string, calldata: string): D
   };
   const amountRaw = selector in amountWord ? wordInt(args, amountWord[selector]) : undefined;
   return { ...base, selector: `0x${selector}`, signature: known.sig, category: known.category,
-    severity: known.severity, details, summary: `${known.sig} on ${target}`,
+    severity: known.severity, details: [...details, ...valueDetail], summary: `${known.sig} on ${target}`,
     amountRaw: amountRaw !== undefined && amountRaw >= 0n ? amountRaw : undefined };
 }
 
-export function decodeActions(targets: string[], calldatas: string[]): DecodedAction[] {
-  return targets.map((t, i) => decodeAction(i, t, calldatas[i] ?? "0x"));
+export function decodeActions(targets: string[], calldatas: string[], values: bigint[] = []): DecodedAction[] {
+  return targets.map((t, i) => decodeAction(i, t, calldatas[i] ?? "0x", values[i] ?? 0n));
 }

@@ -8,13 +8,20 @@
 # another (a "marketing grant" that drains the treasury, a "gas patch" that
 # swaps the proxy implementation, ...).
 #
-# Anyone may flag a proposal by posting a fixed challenge bond. GenLayer
-# validators then reach consensus on a threat score: each one fetches the forum
-# post, decodes the calldata deterministically, and has an LLM compare declared
-# intent with actual behaviour. A confirmed threat (score >= 75) freezes the
-# proposal and pays the challenger a bounty out of the DAO's security pool. A
-# false alarm slashes the challenger's bond. The DAO guardian may appeal a
-# freeze with a 2x bond inside a 24 hour window.
+# Commitment model. The payload a proposal will execute (targets, native values,
+# calldata) and its forum link are *committed* by the DAO's guardian, or by the
+# timelock itself, and fingerprinted with the same keccak256(abi.encode(...))
+# layout Governor contracts use for proposal ids. Challengers flag a committed
+# proposal by (dao_key, proposal_id) only: they never supply the payload, so a
+# stranger cannot fabricate calldata under a real proposal id and freeze it.
+#
+# Anyone may flag a committed proposal by posting a fixed challenge bond.
+# GenLayer validators then reach consensus on a threat score: each one fetches
+# the forum post, decodes the calldata and native values deterministically, and
+# has an LLM compare declared intent with actual behaviour. A confirmed threat
+# (score >= 75) freezes the proposal and pays the challenger a bounty reserved
+# out of the DAO's security pool. A false alarm slashes the challenger's bond.
+# The DAO guardian may appeal a freeze with a 2x bond inside a 24 hour window.
 #
 # Money model: every unit of native value held by this contract belongs to
 # exactly one bucket - pool stake, escrow, claimable, or burn vault - and
@@ -31,7 +38,7 @@ from urllib.parse import urlsplit
 
 import genlayer as gl
 from genlayer import u256
-from genlayer.storage import TreeMap
+from genlayer.storage import DynArray, TreeMap
 
 # genvm-lint requires the bare name `allow_storage` on storage dataclasses.
 allow_storage = gl.storage.allow
@@ -47,9 +54,10 @@ MIN_CHALLENGE_BOND = 2 * ATTO            # 2.0 GEN
 MIN_DAO_DEPOSIT = 10 * ATTO              # smallest security pool deposit
 CHALLENGE_COOLING_PERIOD = 4 * 3600      # lockout after a failed challenge
 APPEAL_WINDOW = 24 * 3600                # guardian appeal window
+FLAG_EXPIRY = 7 * 24 * 3600              # an uninspected flag returns its bond after this
 APPEAL_BOND_MULTIPLIER = 2
 THREAT_THRESHOLD = 75                    # score >= 75 -> malicious
-BOUNTY_BPS = 1000                        # 10% of the DAO pool
+BOUNTY_BPS = 1000                        # 10% of the DAO's unlocked pool
 BPS = 10_000
 RATE_WINDOW = 24 * 3600
 MAX_FLAGS_PER_CALLER = 3                 # per RATE_WINDOW
@@ -68,9 +76,14 @@ VERIFIED_SAFE = "VERIFIED_SAFE"
 FLAGGED_MALICIOUS = "FLAGGED_MALICIOUS"
 CHALLENGED_PAUSED = "CHALLENGED_PAUSED"
 RESOLVED_DISPUTED = "RESOLVED_DISPUTED"
+EXPIRED = "EXPIRED"                      # flag abandoned before inspection; bond returned
+
+APPEAL_ACCEPTED = "APPEAL_ACCEPTED"
+APPEAL_REJECTED = "APPEAL_REJECTED"
 
 _HEX = re.compile(r"^[0-9a-f]*$")
 _ADDR = re.compile(r"^0x[0-9a-f]{40}$")
+_DAO_KEY = re.compile(r"^([0-9]{1,20}):(0x[0-9a-f]{40})$")
 _NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]+|[0-9]+)$")
 
 # Known selectors -> (signature, category). Deterministic ground truth for the
@@ -97,6 +110,96 @@ _MAX_UINT256 = 2**256 - 1
 
 
 # =============================================================================
+# keccak256 (the Ethereum hash; hashlib only ships NIST SHA-3, which pads differently)
+# =============================================================================
+_MASK64 = (1 << 64) - 1
+_ROT = [[0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [62, 6, 43, 15, 61], [28, 55, 25, 21, 56], [27, 20, 39, 8, 14]]
+
+
+def _round_constants() -> list:
+    out = []
+    r = 1
+    for _ in range(24):
+        rc = 0
+        for j in range(7):
+            bit = r & 1
+            r = ((r << 1) ^ 0x71) & 0xFF if r & 0x80 else (r << 1) & 0xFF
+            if bit:
+                rc |= 1 << ((1 << j) - 1)
+        out.append(rc)
+    return out
+
+
+_RC = _round_constants()
+
+
+def _rol64(x: int, n: int) -> int:
+    return ((x << n) | (x >> (64 - n))) & _MASK64 if n else x
+
+
+def _keccak_f(a: list) -> list:
+    for rc in _RC:
+        c = [a[x][0] ^ a[x][1] ^ a[x][2] ^ a[x][3] ^ a[x][4] for x in range(5)]
+        d = [c[(x - 1) % 5] ^ _rol64(c[(x + 1) % 5], 1) for x in range(5)]
+        b = [[0] * 5 for _ in range(5)]
+        for x in range(5):
+            for y in range(5):
+                b[y][(2 * x + 3 * y) % 5] = _rol64(a[x][y] ^ d[x], _ROT[x][y])
+        a = [[b[x][y] ^ (~b[(x + 1) % 5][y] & b[(x + 2) % 5][y]) for y in range(5)] for x in range(5)]
+        a[0][0] ^= rc
+    return a
+
+
+def keccak256(data: bytes) -> bytes:
+    rate = 136
+    padded = bytearray(data)
+    padded.append(0x01)
+    while len(padded) % rate:
+        padded.append(0)
+    padded[-1] |= 0x80
+    state = [[0] * 5 for _ in range(5)]
+    for off in range(0, len(padded), rate):
+        block = padded[off:off + rate]
+        for i in range(rate // 8):
+            state[i % 5][i // 5] ^= int.from_bytes(block[i * 8:i * 8 + 8], "little")
+        state = _keccak_f(state)
+    return b"".join(state[i % 5][i // 5].to_bytes(8, "little") for i in range(4))
+
+
+def _u256_word(n: int) -> bytes:
+    return n.to_bytes(32, "big")
+
+
+def _pad32(b: bytes) -> bytes:
+    return b + b"\x00" * (-len(b) % 32)
+
+
+def proposal_payload_hash(targets: list, values: list, calldatas: list, forum_url: str) -> str:
+    """keccak256(abi.encode(address[] targets, uint256[] values, bytes[] calldatas,
+    bytes32 keccak256(forum_url))): the layout Governor contracts hash proposals
+    with, so a DAO can recompute it independently."""
+    n = len(targets)
+    addrs = _u256_word(n) + b"".join(bytes(12) + bytes.fromhex(t[2:]) for t in targets)
+    vals = _u256_word(n) + b"".join(_u256_word(v) for v in values)
+    elems = []
+    for cd in calldatas:
+        raw = bytes.fromhex(cd[2:])
+        elems.append(_u256_word(len(raw)) + _pad32(raw))
+    offsets = []
+    running = 32 * n
+    for e in elems:
+        offsets.append(_u256_word(running))
+        running += len(e)
+    datas = _u256_word(n) + b"".join(offsets) + b"".join(elems)
+    off_a = 4 * 32
+    off_b = off_a + len(addrs)
+    off_c = off_b + len(vals)
+    encoded = (_u256_word(off_a) + _u256_word(off_b) + _u256_word(off_c)
+               + keccak256(forum_url.encode("utf-8")) + addrs + vals + datas)
+    return "0x" + keccak256(encoded).hex()
+
+
+# =============================================================================
 # Pure helpers (no storage access: safe to call inside non-deterministic blocks)
 # =============================================================================
 def _fail(msg: str) -> gl.vm.UserError:
@@ -110,6 +213,16 @@ def _norm_addr(value: str) -> str:
     return v
 
 
+def _split_dao_key(value: str) -> tuple:
+    """`chain_id:0xaddress` -> (canonical key, chain id, address). Keying DAOs by
+    chain keeps the same address on two chains from colliding."""
+    m = _DAO_KEY.match(value.strip().lower())
+    if m is None:
+        raise _fail("invalid dao_key: expected chain_id:0xaddress")
+    chain_id = int(m.group(1))
+    return f"{chain_id}:{m.group(2)}", chain_id, m.group(2)
+
+
 def _hostname_is_public(host: str) -> bool:
     host = host.rstrip(".").lower()
     if host == "" or ":" in host or "\\" in host:
@@ -118,11 +231,22 @@ def _hostname_is_public(host: str) -> bool:
         return False
     labels = host.split(".")
     if all(_NUMERIC_LABEL.match(label) for label in labels):
-        # Numeric host: only strict dotted-decimal quads are accepted, which
-        # rejects hex / octal / integer encodings such as 0x7f000001 or 2130706433.
-        if len(labels) != 4 or any(not label.isdigit() or int(label) > 255 for label in labels):
+        # Numeric host: only strict dotted-decimal quads are accepted. Hex, integer
+        # and short forms are refused, and so is any octet with a leading zero
+        # (0177.0.0.1 is ambiguous between decimal and octal).
+        if len(labels) != 4:
             return False
-        ip = ipaddress.ip_address(host)
+        for label in labels:
+            if not (label.isascii() and label.isdigit()):
+                return False
+            if len(label) > 1 and label[0] == "0":
+                return False
+            if int(label) > 255:
+                return False
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            return False
         return not (
             ip.is_private or ip.is_loopback or ip.is_link_local
             or ip.is_reserved or ip.is_multicast or ip.is_unspecified
@@ -131,19 +255,20 @@ def _hostname_is_public(host: str) -> bool:
 
 
 def _is_safe_url(url: str) -> bool:
-    if len(url) > MAX_URL_LEN or "\\" in url or any(ord(c) < 33 for c in url):
-        return False
-    low = url.lower()
-    if not (low.startswith("https://") or low.startswith("http://")):
-        return False
+    """Total function: returns False for anything unsafe or unparseable and never raises."""
     try:
+        if len(url) > MAX_URL_LEN or "\\" in url or any(ord(c) < 33 for c in url):
+            return False
+        low = url.lower()
+        if not (low.startswith("https://") or low.startswith("http://")):
+            return False
         parts = urlsplit(url)
         host = parts.hostname or ""
-    except ValueError:
+        if parts.username is not None or parts.password is not None:
+            return False
+        return _hostname_is_public(host)
+    except Exception:
         return False
-    if parts.username is not None or parts.password is not None:
-        return False
-    return _hostname_is_public(host)
 
 
 def _clean_hex(value: str) -> str:
@@ -155,9 +280,15 @@ def _clean_hex(value: str) -> str:
     return "0x" + v
 
 
-def _payload_hash(targets: list, calldatas: list) -> str:
-    blob = json.dumps({"t": targets, "c": calldatas}, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+def _clean_values(values: list, count: int) -> list:
+    if len(values) != count:
+        raise _fail("values must have one entry per target")
+    out = []
+    for v in values:
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0 or v > _MAX_UINT256:
+            raise _fail("values must be non-negative uint256 integers")
+        out.append(int(v))
+    return out
 
 
 def _word(data: str, index: int) -> str:
@@ -174,25 +305,31 @@ def _word_int(data: str, index: int) -> int:
     return int(w, 16) if len(w) == 64 else -1
 
 
-def decode_action(index: int, target: str, calldata: str) -> dict:
-    """Deterministically decode one (target, calldata) pair."""
+def decode_action(index: int, target: str, value: int, calldata: str) -> dict:
+    """Deterministically decode one (target, native value, calldata) action."""
     body = calldata[2:]
+    sends = f" and sends native value {value} wei" if value > 0 else ""
     if body == "":
+        if value > 0:
+            return {
+                "index": index, "target": target, "category": "NATIVE_TRANSFER", "value": value,
+                "summary": f"action {index}: plain native-token send of {value} wei to {target} [NATIVE_TRANSFER]",
+            }
         return {
-            "index": index, "target": target, "category": "NATIVE_TRANSFER",
-            "summary": f"action {index}: empty calldata - plain native-token send to {target}",
+            "index": index, "target": target, "category": "NOOP", "value": 0,
+            "summary": f"action {index}: empty calldata and zero value to {target} (no effect)",
         }
     if len(body) < 8:
         return {
-            "index": index, "target": target, "category": "MALFORMED",
-            "summary": f"action {index}: malformed calldata (shorter than a selector) to {target}",
+            "index": index, "target": target, "category": "MALFORMED", "value": value,
+            "summary": f"action {index}: malformed calldata (shorter than a selector) to {target}{sends}",
         }
     selector, args = body[:8], body[8:]
     known = _SELECTORS.get(selector)
     if known is None:
         return {
-            "index": index, "target": target, "category": "UNKNOWN",
-            "summary": f"action {index}: call to {target} with UNKNOWN selector 0x{selector}",
+            "index": index, "target": target, "category": "UNKNOWN", "value": value,
+            "summary": f"action {index}: call to {target} with UNKNOWN selector 0x{selector}{sends}",
         }
     signature, category = known
     detail = ""
@@ -217,13 +354,13 @@ def decode_action(index: int, target: str, calldata: str) -> dict:
     ):
         detail += " UNLIMITED(max uint256)"
     return {
-        "index": index, "target": target, "category": category,
-        "summary": f"action {index}: {target}.{signature} [{category}]{detail}",
+        "index": index, "target": target, "category": category, "value": value,
+        "summary": f"action {index}: {target}.{signature} [{category}]{detail}{sends}",
     }
 
 
-def decode_actions(targets: list, calldatas: list) -> list:
-    return [decode_action(i, t, c) for i, (t, c) in enumerate(zip(targets, calldatas))]
+def decode_actions(targets: list, values: list, calldatas: list) -> list:
+    return [decode_action(i, t, v, c) for i, (t, v, c) in enumerate(zip(targets, values, calldatas))]
 
 
 def _sanitize(text: str, limit: int) -> str:
@@ -262,7 +399,9 @@ def _fetch_forum_text(url: str) -> str:
 
 def _build_prompt(forum_url: str, forum_text: str, actions: list) -> str:
     decoded = "\n".join(a["summary"] for a in actions)
-    categories = sorted({a["category"] for a in actions})
+    categories = sorted({a["category"] for a in actions} | ({"NATIVE_VALUE"} if any(
+        a["value"] > 0 and a["category"] != "NATIVE_TRANSFER" for a in actions) else set()))
+    total_native = sum(a["value"] for a in actions)
     if forum_text == "":
         forum_block = (
             "NO DESCRIPTION COULD BE RETRIEVED. There is no declared intent, so every "
@@ -272,9 +411,10 @@ def _build_prompt(forum_url: str, forum_text: str, actions: list) -> str:
         forum_block = _sanitize(forum_text, FORUM_MAX_CHARS)
     return (
         "You are a security validator for a DAO governance circuit breaker.\n"
-        "Fetch proposal description from forum_url. Decode target functions and calldata. "
-        "Compare declared intent against actual function calls. Flag discrepancies such as "
-        "hidden token drains, unauthorized minting, ownership transfers, or malicious proxy "
+        "Fetch proposal description from forum_url. Decode target functions, calldata and native "
+        "values. Compare declared intent against actual function calls and value transfers. Flag "
+        "discrepancies such as hidden token drains, native-currency drains, unauthorized minting, "
+        "ownership transfers, or malicious proxy "
         "upgrades. Output JSON: {score: int 0-100, reasoning: str, is_malicious: bool}.\n\n"
         "Scoring guide: 0-25 declared intent matches the calls; 26-74 suspicious or "
         "ambiguous; 75-100 the calls materially exceed or contradict the declared intent.\n"
@@ -286,7 +426,9 @@ def _build_prompt(forum_url: str, forum_text: str, actions: list) -> str:
         f"<untrusted_forum_text>\n{forum_block}\n</untrusted_forum_text>\n\n"
         "=== 3. DECODED CALLS (ground truth computed by code - do not contradict) ===\n"
         f"{decoded}\nCategories present: {', '.join(categories)}\n"
-        "Amounts are raw integers (an 18-decimal token shows 1 token as 10^18).\n\n"
+        f"Total native value sent across all actions: {total_native} wei "
+        "(native currency has 18 decimals, so 10^18 wei is 1 whole unit).\n"
+        "Token amounts are raw integers (an 18-decimal token shows 1 token as 10^18).\n\n"
         "Respond with JSON only."
     )
 
@@ -320,9 +462,9 @@ def _parse_verdict(raw) -> dict:
     return {"score": score, "reasoning": reasoning, "is_malicious": flag}
 
 
-def _analyze(forum_url: str, targets: list, calldatas: list) -> dict:
+def _analyze(forum_url: str, targets: list, values: list, calldatas: list) -> dict:
     """One full analysis pass. Runs on the leader and again on each validator."""
-    actions = decode_actions(targets, calldatas)
+    actions = decode_actions(targets, values, calldatas)
     forum_text = _fetch_forum_text(forum_url)
     prompt = _build_prompt(forum_url, forum_text, actions)
     try:
@@ -338,9 +480,9 @@ def _verdicts_equivalent(leader: dict, mine: dict) -> bool:
     return abs(leader["score"] - mine["score"]) <= SCORE_TOLERANCE
 
 
-def _consensus_verdict(forum_url: str, targets: list, calldatas: list) -> dict:
+def _consensus_verdict(forum_url: str, targets: list, values: list, calldatas: list) -> dict:
     def leader_fn():
-        return _analyze(forum_url, targets, calldatas)
+        return _analyze(forum_url, targets, values, calldatas)
 
     def validator_fn(leaders: gl.vm.Result) -> bool:
         if not isinstance(leaders, gl.vm.Return):
@@ -370,9 +512,11 @@ def _consensus_verdict(forum_url: str, targets: list, calldatas: list) -> dict:
             return False
 
     result = gl.vm.run_nondet(leader_fn, validator_fn)
+    reasoning = str(result["reasoning"])
     return {
         "score": int(result["score"]),
-        "reasoning_hash": hashlib.sha256(str(result["reasoning"]).encode("utf-8")).hexdigest(),
+        "reasoning": reasoning,
+        "reasoning_hash": hashlib.sha256(reasoning.encode("utf-8")).hexdigest(),
     }
 
 
@@ -381,23 +525,46 @@ def _consensus_verdict(forum_url: str, targets: list, calldatas: list) -> dict:
 # =============================================================================
 @allow_storage
 @dataclass
+class CommittedProposal:
+    """What a DAO says a proposal will do. Written only by the guardian or the timelock."""
+    dao_key: str
+    dao_address: str
+    chain_id: u256
+    dao_proposal_id: u256
+    forum_url: str
+    targets_json: str
+    values_json: str
+    calldatas_json: str
+    payload_hash: str
+    committed_by: str
+    committed_at: u256
+    flag_id: u256          # record id of the live flag, 0 when none
+    frozen: bool           # execution freeze consumed by the DAO's guard
+
+
+@allow_storage
+@dataclass
 class ProposalRecord:
     id: u256
+    dao_key: str
     dao_address: str
     dao_proposal_id: u256
     forum_url: str
     targets_json: str
+    values_json: str
     calldatas_json: str
     proposed_at: u256
     challenger: str
     challenger_bond: u256
     threat_score: u256
     status: str
+    reasoning: str
     reasoning_hash: str
     payload_hash: str
     appellant: str
     appeal_bond: u256
     flagged_at: u256
+    reserved_bounty: u256  # bounty set aside from the pool at flag time
     reward_amount: u256
     reward_claimed: bool
     resolution: str
@@ -406,10 +573,12 @@ class ProposalRecord:
 def _view(rec: ProposalRecord) -> dict:
     return {
         "id": int(rec.id),
+        "dao_key": rec.dao_key,
         "dao_address": rec.dao_address,
         "dao_proposal_id": int(rec.dao_proposal_id),
         "forum_url": rec.forum_url,
         "targets": json.loads(rec.targets_json),
+        "values": json.loads(rec.values_json),
         "calldatas": json.loads(rec.calldatas_json),
         "proposed_at": int(rec.proposed_at),
         "challenger": rec.challenger,
@@ -417,26 +586,53 @@ def _view(rec: ProposalRecord) -> dict:
         "threat_score": int(rec.threat_score),
         "status": rec.status,
         "reasoning_hash": rec.reasoning_hash,
+        "payload_hash": rec.payload_hash,
         "appellant": rec.appellant,
         "appeal_bond": int(rec.appeal_bond),
         "flagged_at": int(rec.flagged_at),
+        "reserved_bounty": int(rec.reserved_bounty),
         "reward_amount": int(rec.reward_amount),
         "reward_claimed": rec.reward_claimed,
         "resolution": rec.resolution,
     }
 
 
+def _committed_view(c: CommittedProposal) -> dict:
+    return {
+        "dao_key": c.dao_key,
+        "dao_address": c.dao_address,
+        "chain_id": int(c.chain_id),
+        "dao_proposal_id": int(c.dao_proposal_id),
+        "forum_url": c.forum_url,
+        "targets": json.loads(c.targets_json),
+        "values": json.loads(c.values_json),
+        "calldatas": json.loads(c.calldatas_json),
+        "payload_hash": c.payload_hash,
+        "committed_by": c.committed_by,
+        "committed_at": int(c.committed_at),
+        "flag_id": int(c.flag_id),
+        "frozen": c.frozen,
+    }
+
+
+def _commit_key(dao_key: str, proposal_id: int) -> str:
+    return f"{dao_key}:{int(proposal_id)}"
+
+
 class ArgusGov(gl.contract.Contract):
-    # SecurityPool
+    # SecurityPool, keyed by dao_key = "chain_id:0xtimelock"
     dao_treasury_stake: TreeMap[str, u256]
+    dao_locked: TreeMap[str, u256]          # bounties reserved for open flags
     dao_guardian: TreeMap[str, str]
+    dao_keys: DynArray[str]
     min_challenge_bond: u256
     challenge_cooling_period: u256
 
+    committed: TreeMap[str, CommittedProposal]
+    committed_keys: DynArray[str]
+
     proposals: TreeMap[u256, ProposalRecord]
     next_id: u256
-    payload_index: TreeMap[str, u256]       # dao:pid:payload_hash -> record id
-    frozen_count: TreeMap[str, u256]        # dao:pid -> number of active freezes
 
     # rate limiting / cooling
     caller_window_start: TreeMap[str, u256]
@@ -472,31 +668,42 @@ class ArgusGov(gl.contract.Contract):
     def _save(self, rec: ProposalRecord) -> None:
         self.proposals[rec.id] = rec
 
+    def _get_committed(self, dao_key: str, proposal_id: int) -> CommittedProposal:
+        key = _commit_key(dao_key, proposal_id)
+        if key not in self.committed:
+            raise _fail("Proposal not committed by DAO")
+        return self.committed[key]
+
+    def _save_committed(self, c: CommittedProposal) -> None:
+        self.committed[_commit_key(c.dao_key, int(c.dao_proposal_id))] = c
+
+    def _require_registered(self, dao_key: str) -> None:
+        if dao_key not in self.dao_guardian:
+            raise _fail("DAO not registered")
+
     def _credit(self, who: str, amount: int) -> None:
         if amount <= 0:
             return
         self.claimable[who] = u256(int(self.claimable[who]) + amount if who in self.claimable else amount)
         self.total_claimable = u256(int(self.total_claimable) + amount)
 
-    def _split_slash(self, dao: str, amount: int) -> None:
+    def _locked(self, dao_key: str) -> int:
+        return int(self.dao_locked[dao_key]) if dao_key in self.dao_locked else 0
+
+    def _unlock(self, dao_key: str, amount: int) -> None:
+        if amount > 0:
+            self.dao_locked[dao_key] = u256(self._locked(dao_key) - amount)
+
+    def _split_slash(self, dao_key: str, amount: int) -> None:
         """Slash `amount` out of escrow: half to the DAO pool, remainder burned."""
         to_dao = amount // 2
         self.total_escrow = u256(int(self.total_escrow) - amount)
-        self.dao_treasury_stake[dao] = u256(int(self.dao_treasury_stake[dao]) + to_dao)
+        self.dao_treasury_stake[dao_key] = u256(int(self.dao_treasury_stake[dao_key]) + to_dao)
         self.total_pool = u256(int(self.total_pool) + to_dao)
         self.burn_vault = u256(int(self.burn_vault) + (amount - to_dao))
 
     def _start_cooldown(self, challenger: str, now: int) -> None:
         self.challenger_cooldown_until[challenger] = u256(now + int(self.challenge_cooling_period))
-
-    def _freeze(self, rec: ProposalRecord) -> None:
-        key = f"{rec.dao_address}:{int(rec.dao_proposal_id)}"
-        self.frozen_count[key] = u256(int(self.frozen_count[key]) + 1 if key in self.frozen_count else 1)
-
-    def _unfreeze(self, rec: ProposalRecord) -> None:
-        key = f"{rec.dao_address}:{int(rec.dao_proposal_id)}"
-        if key in self.frozen_count and int(self.frozen_count[key]) > 0:
-            self.frozen_count[key] = u256(int(self.frozen_count[key]) - 1)
 
     def _rate_limit(self, window_start, window_count, key: str, limit: int, now: int, what: str) -> None:
         started = int(window_start[key]) if key in window_start else 0
@@ -515,21 +722,75 @@ class ArgusGov(gl.contract.Contract):
         return _view(self._get(proposal_id))
 
     @gl.public.view
-    def get_security_pool(self, dao_address: str) -> dict:
-        dao = _norm_addr(dao_address)
+    def get_security_pool(self, dao_key: str) -> dict:
+        key, chain_id, address = _split_dao_key(dao_key)
+        stake = int(self.dao_treasury_stake[key]) if key in self.dao_treasury_stake else 0
+        locked = self._locked(key)
         return {
-            "dao_address": dao,
-            "guardian": self.dao_guardian[dao] if dao in self.dao_guardian else "",
-            "stake": int(self.dao_treasury_stake[dao]) if dao in self.dao_treasury_stake else 0,
+            "dao_key": key,
+            "chain_id": chain_id,
+            "dao_address": address,
+            "guardian": self.dao_guardian[key] if key in self.dao_guardian else "",
+            "stake": stake,
+            "locked": locked,
+            "withdrawable": stake - locked,
             "min_challenge_bond": int(self.min_challenge_bond),
             "challenge_cooling_period": int(self.challenge_cooling_period),
         }
 
     @gl.public.view
-    def is_execution_frozen(self, dao_address: str, dao_proposal_id: int) -> bool:
-        """The hook a DAO timelock queries before executing a proposal."""
-        key = f"{_norm_addr(dao_address)}:{int(dao_proposal_id)}"
-        return key in self.frozen_count and int(self.frozen_count[key]) > 0
+    def get_dao_count(self) -> int:
+        return len(self.dao_keys)
+
+    @gl.public.view
+    def get_dao_key_at(self, index: int) -> str:
+        if index < 0 or index >= len(self.dao_keys):
+            raise _fail("dao index out of range")
+        return self.dao_keys[index]
+
+    @gl.public.view
+    def get_committed_proposal(self, dao_key: str, proposal_id: int) -> dict:
+        key, _, _ = _split_dao_key(dao_key)
+        return _committed_view(self._get_committed(key, proposal_id))
+
+    @gl.public.view
+    def get_committed_count(self) -> int:
+        return len(self.committed_keys)
+
+    @gl.public.view
+    def get_committed_at(self, index: int) -> dict:
+        if index < 0 or index >= len(self.committed_keys):
+            raise _fail("committed index out of range")
+        return _committed_view(self.committed[self.committed_keys[index]])
+
+    @gl.public.view
+    def get_proposal_verdict(self, dao_key: str, proposal_id: int) -> dict:
+        """The consensus verdict for a committed proposal: score and the full reasoning text."""
+        key, _, _ = _split_dao_key(dao_key)
+        c = self._get_committed(key, proposal_id)
+        if int(c.flag_id) == 0:
+            return {
+                "dao_key": key, "dao_proposal_id": int(c.dao_proposal_id), "payload_hash": c.payload_hash,
+                "flagged": False, "record_id": 0, "status": "", "threat_score": 0,
+                "is_malicious": False, "reasoning": "", "reasoning_hash": "",
+            }
+        rec = self.proposals[c.flag_id]
+        return {
+            "dao_key": key, "dao_proposal_id": int(c.dao_proposal_id), "payload_hash": c.payload_hash,
+            "flagged": True, "record_id": int(rec.id), "status": rec.status,
+            "threat_score": int(rec.threat_score),
+            "is_malicious": rec.status in (FLAGGED_MALICIOUS, CHALLENGED_PAUSED) or (
+                rec.status == RESOLVED_DISPUTED and rec.resolution == APPEAL_REJECTED),
+            "reasoning": rec.reasoning, "reasoning_hash": rec.reasoning_hash,
+        }
+
+    @gl.public.view
+    def is_execution_frozen(self, dao_key: str, dao_proposal_id: int) -> bool:
+        """The hook a DAO's execution guard queries before running a proposal. Only a
+        proposal the DAO itself committed can ever be frozen."""
+        key, _, _ = _split_dao_key(dao_key)
+        ck = _commit_key(key, dao_proposal_id)
+        return ck in self.committed and self.committed[ck].frozen
 
     @gl.public.view
     def get_claimable(self, who_hex: str) -> int:
@@ -563,40 +824,73 @@ class ArgusGov(gl.contract.Contract):
 
     # ------------------------------------------------------------------ DAOs
     @gl.public.write.payable
-    def register_dao(self, timelock_address: str) -> None:
-        """Link a DAO timelock and fund (or top up) its security pool. The first
-        registrant becomes the guardian that may appeal flags against the DAO."""
-        dao = _norm_addr(timelock_address)
+    def register_dao(self, dao_key: str) -> None:
+        """Link a DAO (chain_id:0xtimelock) and fund or top up its security pool. The
+        first registrant becomes the guardian; the timelock itself can take the role
+        over at any time with claim_guardianship."""
+        key, _, _ = _split_dao_key(dao_key)
         value = int(gl.message.value)
         if value < MIN_DAO_DEPOSIT:
             raise _fail("security pool deposit below minimum")
         caller = self._caller()
-        if dao in self.dao_guardian:
-            if self.dao_guardian[dao] != caller:
+        if key in self.dao_guardian:
+            if self.dao_guardian[key] != caller:
                 raise _fail("only the DAO guardian can top up")
-            self.dao_treasury_stake[dao] = u256(int(self.dao_treasury_stake[dao]) + value)
+            self.dao_treasury_stake[key] = u256(int(self.dao_treasury_stake[key]) + value)
         else:
-            self.dao_guardian[dao] = caller
-            self.dao_treasury_stake[dao] = u256(value)
+            self.dao_guardian[key] = caller
+            self.dao_treasury_stake[key] = u256(value)
+            self.dao_keys.append(key)
         self.total_pool = u256(int(self.total_pool) + value)
 
-    # ------------------------------------------------------------------ flag
-    @gl.public.write.payable
-    def flag_proposal(
+    @gl.public.write
+    def claim_guardianship(self, dao_key: str) -> None:
+        """The timelock address takes the guardian role from whoever registered first,
+        so a squatter cannot hold a DAO's seat against its own timelock."""
+        key, _, address = _split_dao_key(dao_key)
+        self._require_registered(key)
+        if self._caller() != address:
+            raise _fail("only the timelock can claim guardianship")
+        self.dao_guardian[key] = address
+
+    @gl.public.write
+    def withdraw_pool(self, dao_key: str, amount: int) -> int:
+        """Guardian withdraws idle pool funds. Bounties reserved for open flags stay
+        locked, so a pending challenger can never be paid out of an emptied pool."""
+        key, _, _ = _split_dao_key(dao_key)
+        self._require_registered(key)
+        if self._caller() != self.dao_guardian[key]:
+            raise _fail("only the DAO guardian can withdraw")
+        amount = int(amount)
+        if amount <= 0:
+            raise _fail("withdraw amount must be positive")
+        available = int(self.dao_treasury_stake[key]) - self._locked(key)
+        if amount > available:
+            raise _fail("amount exceeds withdrawable pool")
+        self.dao_treasury_stake[key] = u256(int(self.dao_treasury_stake[key]) - amount)
+        self.total_pool = u256(int(self.total_pool) - amount)
+        self._credit(self._caller(), amount)
+        return amount
+
+    # ------------------------------------------------------------- commitment
+    @gl.public.write
+    def commit_proposal(
         self,
-        dao_address: str,
+        dao_key: str,
         proposal_id: int,
-        forum_url: str,
         targets: list[str],
+        values: list[int],
         calldatas: list[str],
-    ) -> int:
-        """Challenge a proposal. Returns the ArgusGov record id used by every
-        later call. Requires msg.value == min_challenge_bond."""
-        dao = _norm_addr(dao_address)
-        if dao not in self.dao_guardian:
-            raise _fail("DAO not registered")
-        if int(gl.message.value) != int(self.min_challenge_bond):
-            raise _fail("challenge bond must equal min_challenge_bond")
+        forum_url: str,
+    ) -> str:
+        """The DAO guardian (or the timelock directly) records what a proposal will
+        execute. Challengers can later flag it by id alone. Write-once per proposal.
+        Returns the keccak256(abi.encode(targets, values, calldatas, hash(forum_url)))."""
+        key, chain_id, address = _split_dao_key(dao_key)
+        self._require_registered(key)
+        caller = self._caller()
+        if caller != self.dao_guardian[key] and caller != address:
+            raise _fail("only the DAO guardian or the timelock can commit proposals")
         if int(proposal_id) < 0:
             raise _fail("invalid proposal id")
         if not _is_safe_url(forum_url):
@@ -604,50 +898,111 @@ class ArgusGov(gl.contract.Contract):
         if len(targets) == 0 or len(targets) > MAX_ACTIONS or len(targets) != len(calldatas):
             raise _fail("targets and calldatas must be equal-length, 1..10 entries")
         clean_targets = [_norm_addr(t) for t in targets]
+        clean_values = _clean_values(values, len(clean_targets))
         clean_calldatas = [_clean_hex(c) for c in calldatas]
+        ck = _commit_key(key, proposal_id)
+        if ck in self.committed:
+            raise _fail("proposal already committed")
+        phash = proposal_payload_hash(clean_targets, clean_values, clean_calldatas, forum_url)
+        self.committed[ck] = CommittedProposal(
+            dao_key=key,
+            dao_address=address,
+            chain_id=u256(chain_id),
+            dao_proposal_id=u256(int(proposal_id)),
+            forum_url=forum_url,
+            targets_json=json.dumps(clean_targets),
+            values_json=json.dumps(clean_values),
+            calldatas_json=json.dumps(clean_calldatas),
+            payload_hash=phash,
+            committed_by=caller,
+            committed_at=u256(self._now()),
+            flag_id=u256(0),
+            frozen=False,
+        )
+        self.committed_keys.append(ck)
+        return phash
+
+    # ------------------------------------------------------------------ flag
+    @gl.public.write.payable
+    def flag_proposal(self, dao_key: str, proposal_id: int) -> int:
+        """Challenge a proposal the DAO has committed. The caller names it and posts
+        the bond; the payload comes only from the commitment. Returns the ArgusGov
+        record id used by every later call."""
+        key, _, address = _split_dao_key(dao_key)
+        self._require_registered(key)
+        c = self._get_committed(key, proposal_id)
+        if int(c.flag_id) != 0:
+            raise _fail("this proposal is already flagged")
+        if int(gl.message.value) != int(self.min_challenge_bond):
+            raise _fail("challenge bond must equal min_challenge_bond")
 
         caller = self._caller()
         now = self._now()
         if caller in self.challenger_cooldown_until and now < int(self.challenger_cooldown_until[caller]):
             raise _fail("challenger is in cooling period")
-
-        phash = _payload_hash(clean_targets, clean_calldatas)
-        index_key = f"{dao}:{int(proposal_id)}:{phash}"
-        if index_key in self.payload_index:
-            raise _fail("this proposal payload was already flagged")
-
         self._rate_limit(self.caller_window_start, self.caller_window_count, caller,
                          MAX_FLAGS_PER_CALLER, now, "caller")
-        self._rate_limit(self.dao_window_start, self.dao_window_count, dao,
+        self._rate_limit(self.dao_window_start, self.dao_window_count, key,
                          MAX_FLAGS_PER_DAO, now, "DAO")
+
+        # Reserve the bounty now so the guardian cannot drain the pool before settlement.
+        available = int(self.dao_treasury_stake[key]) - self._locked(key)
+        reserved = available * BOUNTY_BPS // BPS
+        self.dao_locked[key] = u256(self._locked(key) + reserved)
 
         self.next_id = u256(int(self.next_id) + 1)
         rid = int(self.next_id)
         bond = int(gl.message.value)
         self.total_escrow = u256(int(self.total_escrow) + bond)
-        self.payload_index[index_key] = u256(rid)
+        c.flag_id = u256(rid)
+        self._save_committed(c)
         self.proposals[u256(rid)] = ProposalRecord(
             id=u256(rid),
-            dao_address=dao,
-            dao_proposal_id=u256(int(proposal_id)),
-            forum_url=forum_url,
-            targets_json=json.dumps(clean_targets),
-            calldatas_json=json.dumps(clean_calldatas),
+            dao_key=key,
+            dao_address=address,
+            dao_proposal_id=c.dao_proposal_id,
+            forum_url=c.forum_url,
+            targets_json=c.targets_json,
+            values_json=c.values_json,
+            calldatas_json=c.calldatas_json,
             proposed_at=u256(now),
             challenger=caller,
             challenger_bond=u256(bond),
             threat_score=u256(0),
             status=REGISTERED,
+            reasoning="",
             reasoning_hash="",
-            payload_hash=phash,
+            payload_hash=c.payload_hash,
             appellant="",
             appeal_bond=u256(0),
             flagged_at=u256(0),
+            reserved_bounty=u256(reserved),
             reward_amount=u256(0),
             reward_claimed=False,
             resolution="",
         )
         return rid
+
+    @gl.public.write
+    def expire_flag(self, proposal_id: int) -> int:
+        """Return the bond of a flag nobody inspected within 7 days and free the
+        proposal to be flagged again. Permissionless; the challenger is not penalised."""
+        rec = self._get(proposal_id)
+        if rec.status != REGISTERED:
+            raise _fail("only an uninspected flag can expire")
+        if self._now() < int(rec.proposed_at) + FLAG_EXPIRY:
+            raise _fail("flag has not expired")
+        bond = int(rec.challenger_bond)
+        self._unlock(rec.dao_key, int(rec.reserved_bounty))
+        rec.status = EXPIRED
+        rec.resolution = EXPIRED
+        self._save(rec)
+        c = self._get_committed(rec.dao_key, int(rec.dao_proposal_id))
+        c.flag_id = u256(0)
+        self._save_committed(c)
+        self.total_escrow = u256(int(self.total_escrow) - bond)
+        self._credit(rec.challenger, bond)
+        return bond
 
     # --------------------------------------------------------------- inspect
     @gl.public.write
@@ -658,9 +1013,10 @@ class ArgusGov(gl.contract.Contract):
         if rec.status != REGISTERED:
             raise _fail("proposal is not awaiting inspection")
         verdict = _consensus_verdict(
-            rec.forum_url, json.loads(rec.targets_json), json.loads(rec.calldatas_json)
+            rec.forum_url, json.loads(rec.targets_json), json.loads(rec.values_json), json.loads(rec.calldatas_json)
         )
         rec.threat_score = u256(verdict["score"])
+        rec.reasoning = verdict["reasoning"]
         rec.reasoning_hash = verdict["reasoning_hash"]
         rec.status = ANALYZING
         self._save(rec)
@@ -676,22 +1032,25 @@ class ArgusGov(gl.contract.Contract):
         now = self._now()
         score = int(rec.threat_score)
         bond = int(rec.challenger_bond)
-        dao = rec.dao_address
+        dao = rec.dao_key
+        reserved = int(rec.reserved_bounty)
 
         if score >= THREAT_THRESHOLD:
-            # Bounty comes out of the DAO's pool; bond + bounty vest to the
-            # challenger once the appeal window closes (see claim_reward).
-            pool = int(self.dao_treasury_stake[dao])
-            bounty = pool * BOUNTY_BPS // BPS
-            self.dao_treasury_stake[dao] = u256(pool - bounty)
-            self.total_pool = u256(int(self.total_pool) - bounty)
-            self.total_escrow = u256(int(self.total_escrow) + bounty)
-            rec.reward_amount = u256(bond + bounty)
+            # The bounty reserved at flag time leaves the pool; bond + bounty vest to
+            # the challenger once the appeal window closes (see claim_reward).
+            self.dao_treasury_stake[dao] = u256(int(self.dao_treasury_stake[dao]) - reserved)
+            self._unlock(dao, reserved)
+            self.total_pool = u256(int(self.total_pool) - reserved)
+            self.total_escrow = u256(int(self.total_escrow) + reserved)
+            rec.reward_amount = u256(bond + reserved)
             rec.flagged_at = u256(now)
             rec.status = FLAGGED_MALICIOUS
-            self._freeze(rec)
+            c = self._get_committed(dao, int(rec.dao_proposal_id))
+            c.frozen = True
+            self._save_committed(c)
         else:
             # False alarm: bond slashed 50% DAO pool / 50% burn vault.
+            self._unlock(dao, reserved)
             self._split_slash(dao, bond)
             self._start_cooldown(rec.challenger, now)
             rec.status = VERIFIED_SAFE
@@ -726,7 +1085,7 @@ class ArgusGov(gl.contract.Contract):
         rec = self._get(proposal_id)
         if rec.status != FLAGGED_MALICIOUS:
             raise _fail("proposal is not appealable")
-        if self._caller() != self.dao_guardian[rec.dao_address]:
+        if self._caller() != self.dao_guardian[rec.dao_key]:
             raise _fail("only the DAO guardian can appeal")
         if self._now() >= int(rec.flagged_at) + APPEAL_WINDOW:
             raise _fail("appeal window closed")
@@ -742,19 +1101,21 @@ class ArgusGov(gl.contract.Contract):
     @gl.public.write
     def resolve_appeal(self, proposal_id: int) -> str:
         """Re-run validator consensus on a paused proposal and settle the appeal.
-        Permissionless."""
+        Permissionless. An accepted appeal leaves the freeze in place until
+        unfreeze_proposal is called, so lifting it is an explicit, auditable step."""
         rec = self._get(proposal_id)
         if rec.status != CHALLENGED_PAUSED:
             raise _fail("proposal has no pending appeal")
         verdict = _consensus_verdict(
-            rec.forum_url, json.loads(rec.targets_json), json.loads(rec.calldatas_json)
+            rec.forum_url, json.loads(rec.targets_json), json.loads(rec.values_json), json.loads(rec.calldatas_json)
         )
         now = self._now()
         bond = int(rec.challenger_bond)
         reward = int(rec.reward_amount)
         appeal_bond = int(rec.appeal_bond)
-        dao = rec.dao_address
+        dao = rec.dao_key
         rec.threat_score = u256(verdict["score"])
+        rec.reasoning = verdict["reasoning"]
         rec.reasoning_hash = verdict["reasoning_hash"]
 
         if verdict["score"] >= THREAT_THRESHOLD:
@@ -764,10 +1125,10 @@ class ArgusGov(gl.contract.Contract):
             self.burn_vault = u256(int(self.burn_vault) + (appeal_bond - to_challenger))
             self._credit(rec.challenger, reward + to_challenger)
             rec.reward_claimed = True
-            rec.resolution = "APPEAL_REJECTED"
+            rec.resolution = APPEAL_REJECTED
         else:
             # Appeal accepted: appellant refunded, bounty back to the pool,
-            # challenger bond slashed, execution unfrozen.
+            # challenger bond slashed.
             bounty = reward - bond
             self.total_escrow = u256(int(self.total_escrow) - appeal_bond - bounty)
             self._credit(rec.appellant, appeal_bond)
@@ -775,12 +1136,30 @@ class ArgusGov(gl.contract.Contract):
             self.total_pool = u256(int(self.total_pool) + bounty)
             self._split_slash(dao, bond)
             self._start_cooldown(rec.challenger, now)
-            self._unfreeze(rec)
             rec.reward_claimed = True
-            rec.resolution = "APPEAL_ACCEPTED"
+            rec.resolution = APPEAL_ACCEPTED
         rec.status = RESOLVED_DISPUTED
         self._save(rec)
         return rec.resolution
+
+    @gl.public.write
+    def unfreeze_proposal(self, dao_key: str, proposal_id: int) -> None:
+        """Lift the execution freeze once nothing justifies it any more: the appeal was
+        accepted, or the flag ended without a verified exploit (judged safe, expired).
+        Permissionless, because the conditions are objective; a standing malicious
+        verdict can never be unfrozen."""
+        key, _, _ = _split_dao_key(dao_key)
+        c = self._get_committed(key, proposal_id)
+        if not c.frozen:
+            raise _fail("proposal is not frozen")
+        # A frozen proposal always has a flag record; that record decides.
+        rec = self.proposals[c.flag_id] if int(c.flag_id) != 0 else None
+        cleared = rec is None or rec.status in (VERIFIED_SAFE, EXPIRED) or (
+            rec.status == RESOLVED_DISPUTED and rec.resolution == APPEAL_ACCEPTED)
+        if not cleared:
+            raise _fail("freeze is still justified")
+        c.frozen = False
+        self._save_committed(c)
 
     # ------------------------------------------------------------ settlement
     @gl.public.write

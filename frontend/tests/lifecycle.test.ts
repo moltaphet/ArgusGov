@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyEvent, availableActions, isMalicious, type LifecycleState } from "@/lib/lifecycle";
 import type { Proposal } from "@/lib/types";
+import { proposal } from "./helpers";
 
 const registered: LifecycleState = { status: "REGISTERED", score: 0 };
 
@@ -25,6 +26,14 @@ describe("proposal status machine", () => {
     expect(applyEvent(s, { type: "resolve", score: 20 }).status).toBe("RESOLVED_DISPUTED");
   });
 
+  it("expires only an uninspected flag", () => {
+    expect(applyEvent(registered, { type: "expire" }).status).toBe("EXPIRED");
+    const analyzing = applyEvent(registered, { type: "inspect", score: 90 });
+    expect(applyEvent(analyzing, { type: "expire" })).toBe(analyzing);       // a recorded verdict must be settled
+    const expired = applyEvent(registered, { type: "expire" });
+    expect(applyEvent(expired, { type: "inspect", score: 99 })).toBe(expired);
+  });
+
   it("ignores events that are illegal from the current status", () => {
     expect(applyEvent(registered, { type: "settle" })).toBe(registered);
     expect(applyEvent(registered, { type: "appeal" })).toBe(registered);
@@ -35,19 +44,24 @@ describe("proposal status machine", () => {
 });
 
 const DAY = 24 * 3600;
-const base: Proposal = {
-  id: 1, daoAddress: "0xdao", daoProposalId: 7, forumUrl: "https://f.example", targets: [], calldatas: [], proposedAt: 1000,
-  challenger: "0xCHALLENGER", challengerBond: 2n * 10n ** 18n, threatScore: 85, status: "FLAGGED_MALICIOUS", reasoningHash: "", payloadHash: "",
-  appellant: "", appealBond: 0n, flaggedAt: 10_000, rewardAmount: 12n * 10n ** 18n, rewardClaimed: false, resolution: "", frozen: true,
-};
+const base: Proposal = proposal({ challenger: "0xCHALLENGER" });
 
 describe("available actions", () => {
   const byId = (p: Proposal, ctx: Parameters<typeof availableActions>[1]) => Object.fromEntries(availableActions(p, ctx).map((a) => [a.id, a]));
 
   it("offers inspection for REGISTERED and settlement for ANALYZING", () => {
-    expect(availableActions({ ...base, status: "REGISTERED" }, { now: 0 }).map((a) => a.id)).toEqual(["inspect"]);
+    expect(availableActions({ ...base, status: "REGISTERED" }, { now: 0 }).map((a) => a.id)).toEqual(["inspect", "expire"]);
     expect(availableActions({ ...base, status: "ANALYZING" }, { now: 0 }).map((a) => a.id)).toEqual(["settle"]);
     expect(availableActions({ ...base, status: "VERIFIED_SAFE" }, { now: 0 })).toEqual([]);
+    expect(availableActions({ ...base, status: "EXPIRED" }, { now: 0 })).toEqual([]);
+  });
+
+  it("lets an abandoned flag be reclaimed only after 7 days, inclusive", () => {
+    const registered = { ...base, status: "REGISTERED" as const, proposedAt: 1_000 };
+    const expiry = 1_000 + 7 * DAY;
+    expect(byId(registered, { now: expiry - 1 }).expire.enabled).toBe(false);
+    expect(byId(registered, { now: expiry - 1 }).expire.reason).toMatch(/7 days/);
+    expect(byId(registered, { now: expiry }).expire.enabled).toBe(true);
   });
 
   it("lets only the guardian appeal, and only inside the 24h window", () => {
@@ -63,5 +77,13 @@ describe("available actions", () => {
     expect(byId(base, { now: closed, account: "0xchallenger" }).claim.enabled).toBe(true);
     expect(byId(base, { now: closed, account: "0xother" }).claim.enabled).toBe(false);
     expect(byId({ ...base, rewardClaimed: true }, { now: closed, account: "0xchallenger" }).claim.enabled).toBe(false);
+  });
+
+  it("offers to lift the freeze only after an accepted appeal, and never for a standing verdict", () => {
+    const accepted = { ...base, status: "RESOLVED_DISPUTED" as const, resolution: "APPEAL_ACCEPTED", frozen: true };
+    expect(availableActions(accepted, { now: 0 }).map((a) => a.id)).toEqual(["unfreeze"]);
+    expect(availableActions({ ...accepted, frozen: false }, { now: 0 })).toEqual([]);                        // already lifted
+    expect(availableActions({ ...accepted, resolution: "APPEAL_REJECTED" }, { now: 0 })).toEqual([]);       // verdict stands
+    expect(availableActions({ ...base, status: "CHALLENGED_PAUSED" }, { now: 0 })).toEqual([]);             // appeal still pending
   });
 });

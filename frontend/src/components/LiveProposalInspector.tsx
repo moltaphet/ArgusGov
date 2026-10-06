@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Clock, Coins, Gavel, Scale, Search, Shield
 import { useEffect, useMemo } from "react";
 import { useAccount } from "wagmi";
 import { useAppealFlag } from "@/hooks/useAppealFlag";
+import { useExpireFlag, useUnfreezeProposal } from "@/hooks/useProposalActions";
 import { useClaimReward } from "@/hooks/useClaimReward";
 import { useExecuteCircuitBreaker, useInspectProposal } from "@/hooks/useInspectProposal";
 import { decodeActions } from "@/lib/decode";
@@ -72,17 +73,19 @@ export function LiveProposalInspector({ proposals, selectedId, onSelect, loading
 
 function Detail({ p }: { p: Proposal }) {
   const forum = useForum(p.forumUrl);
-  const actions = useMemo(() => decodeActions(p.targets, p.calldatas), [p.targets, p.calldatas]);
+  const actions = useMemo(() => decodeActions(p.targets, p.calldatas, p.values), [p.targets, p.calldatas, p.values]);
   const inspectHash = typeof window === "undefined" ? undefined : inspectHashFor(p.id);
   const consensus = useQuery({ queryKey: ["consensus", inspectHash], enabled: Boolean(inspectHash), queryFn: () => loadConsensus(inspectHash!), staleTime: 5 * 60_000 });
   const now = Date.now() / 1000;
   const { address } = useAccount();
-  const pool = useQuery({ queryKey: ["daos", "pool", p.daoAddress], staleTime: 30_000, queryFn: () => readView<{ guardian?: string }>("get_security_pool", [p.daoAddress]) });
+  const pool = useQuery({ queryKey: ["daos", "pool", p.daoKey], staleTime: 30_000, queryFn: () => readView<{ guardian?: string }>("get_security_pool", [p.daoKey]) });
   const inspect = useInspectProposal();
   const settle = useExecuteCircuitBreaker();
   const appeal = useAppealFlag();
   const claim = useClaimReward();
-  const anyBusy = inspect.busy || settle.busy || appeal.busy || claim.busy;
+  const unfreeze = useUnfreezeProposal();
+  const expire = useExpireFlag();
+  const anyBusy = inspect.busy || settle.busy || appeal.busy || claim.busy || unfreeze.busy || expire.busy;
   const actionList = availableActions(p, { account: address?.toLowerCase(), guardian: pool.data?.guardian?.toLowerCase(), now });
   const scored = p.status !== "REGISTERED";
   const appealLeft = p.flaggedAt ? p.flaggedAt + PROTOCOL.appealWindowSeconds - now : 0;
@@ -95,10 +98,12 @@ function Detail({ p }: { p: Proposal }) {
     settle: () => settle.execute(p.id),
     appeal: () => appeal.appeal(p),
     claim: () => claim.claim(p.id),
+    unfreeze: () => unfreeze.unfreeze(p.daoKey, p.daoProposalId),
+    expire: () => expire.expire(p.id),
   };
-  const busyFor: Record<ActionId, boolean> = { inspect: inspect.busy, settle: settle.busy, appeal: appeal.busy, claim: claim.busy };
-  const iconFor: Record<ActionId, React.ReactNode> = { inspect: <Search size={15} />, settle: <Gavel size={15} />, appeal: <Scale size={15} />, claim: <Coins size={15} /> };
-  const toneFor: Record<ActionId, string> = { inspect: "btn-glass", settle: "btn-solid-rose", appeal: "btn-glass", claim: "btn-glass" };
+  const busyFor: Record<ActionId, boolean> = { inspect: inspect.busy, settle: settle.busy, appeal: appeal.busy, claim: claim.busy, unfreeze: unfreeze.busy, expire: expire.busy };
+  const iconFor: Record<ActionId, React.ReactNode> = { inspect: <Search size={15} />, settle: <Gavel size={15} />, appeal: <Scale size={15} />, claim: <Coins size={15} />, unfreeze: <ShieldCheck size={15} />, expire: <Clock size={15} /> };
+  const toneFor: Record<ActionId, string> = { inspect: "btn-glass", settle: "btn-solid-rose", appeal: "btn-glass", claim: "btn-glass", unfreeze: "btn-glass", expire: "btn-glass" };
 
   return (
     <div className="space-y-4 p-5">
@@ -112,7 +117,7 @@ function Detail({ p }: { p: Proposal }) {
               <span className="font-mono text-[11px] text-zinc-600">record {p.id}</span>
             </div>
             <div className="flex items-center gap-1 font-mono text-[11px] text-zinc-500">
-              {shortAddress(p.daoAddress, 8, 6)}<CopyButton value={p.daoAddress} label="Copy DAO address" />
+              {shortAddress(p.daoAddress, 8, 6)}<CopyButton value={p.daoAddress} label="Copy DAO address" /><span className="ml-1 rounded bg-white/[0.06] px-1.5 text-[10px] text-zinc-400">chain {p.daoKey.split(":")[0]}</span>
             </div>
           </div>
         </div>
@@ -149,6 +154,7 @@ function Detail({ p }: { p: Proposal }) {
           <Fact label="Reward at stake" value={p.rewardAmount ? `${formatGen(p.rewardAmount)} GEN` : "n/a"} />
           <Fact label="Appeal window" value={p.status === "FLAGGED_MALICIOUS" ? countdown(appealLeft) : p.appealBond ? "Appealed" : "n/a"} />
           <Fact label="Actions" value={String(actions.length)} />
+          <Fact label="Committed hash" value={p.payloadHash ? `${p.payloadHash.slice(0, 10)}…` : "n/a"} mono />
           <Fact label="Reasoning hash" value={p.reasoningHash ? `${p.reasoningHash.slice(0, 10)}…` : "n/a"} mono />
         </dl>
       </div>
@@ -159,7 +165,7 @@ function Detail({ p }: { p: Proposal }) {
         <CalldataTerminal actions={actions} forumText={forum.data?.text ?? ""} />
       </div>
 
-      <ReasoningTrace hash={inspectHash} onchainHash={p.reasoningHash} />
+      <ReasoningTrace hash={inspectHash} onchainHash={p.reasoningHash} daoKey={p.daoKey} daoProposalId={p.daoProposalId} scored={scored} />
 
       <div className="flex flex-wrap items-start gap-2.5">
         {actionList.map((a) => (

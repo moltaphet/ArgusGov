@@ -88,6 +88,18 @@ export function CalldataTerminal({ actions, forumText }: { actions: DecodedActio
                 <span style={{ color: privileged ? undefined : FN }}>{fname}</span><span className="text-zinc-600">(</span>
               </Line>
               {a.details.map((d) => {
+                const isNative = d.label === "native value";
+                if (isNative) {
+                  const native = tokensFromRaw(a.value);
+                  const nativeVerdict = compareAmount(native, mentions);
+                  const nativeDanger = nativeVerdict.kind !== "consistent";
+                  return (
+                    <Line key={d.label} n={++n} danger={nativeDanger} note={nativeDanger ? verdictNote(nativeVerdict) : undefined}>
+                      <span className="pl-5 text-zinc-500">value: </span>
+                      <span style={{ color: nativeDanger ? undefined : NUM }}>{formatTokens(a.value)} native</span>
+                    </Line>
+                  );
+                }
                 const isAmount = d.label === "amount";
                 const isAddr = /^0x[0-9a-f]{40}$/i.test(d.value);
                 const dangerous = isAmount && amountDanger;

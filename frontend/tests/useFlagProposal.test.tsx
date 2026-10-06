@@ -6,13 +6,37 @@ import { CHALLENGE_BOND, useFlagProposal } from "@/hooks/useFlagProposal";
 import { GENLAYER_STUDIO_NEXT_ID } from "@/lib/contracts/chain";
 import { readView, sendWrite } from "@/lib/genlayer";
 import { ContractRevertError } from "@/lib/errors";
-import { DAO, TOKEN, WALLET, makeClient, transferCalldata, EVIL, GEN, withQuery } from "./helpers";
+import { DAO_KEY, WALLET, makeClient, withQuery } from "./helpers";
 
 vi.mock("wagmi", () => ({ useAccount: vi.fn(), useSwitchChain: vi.fn(), useBalance: vi.fn() }));
 vi.mock("@/lib/genlayer", () => ({ sendWrite: vi.fn(), readView: vi.fn() }));
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
-const input = { daoAddress: DAO.toUpperCase().replace("0X", "0x"), proposalId: "42", forumUrl: " https://forum.example-dao.org/t/42 ", targets: [TOKEN], calldatas: [transferCalldata(EVIL, 9n * GEN)] };
+const input = { daoKey: DAO_KEY.toUpperCase().replace("0X", "0x"), proposalId: "42" };
+
+function chain(overrides: Record<string, unknown> = {}) {
+  vi.mocked(readView).mockImplementation(async (name: string) => {
+    if (name in overrides) {
+      const v = overrides[name];
+      if (v instanceof Error) throw v;
+      return v as never;
+    }
+    if (name === "get_security_pool") return { guardian: "0x1" } as never;
+    if (name === "get_committed_proposal") return { flag_id: 0 } as never;
+    return 0 as never;
+  });
+}
+
+async function submitAndCollect(overrides: Record<string, unknown>) {
+  chain(overrides);
+  vi.mocked(sendWrite).mockImplementation(async (opts) => {
+    await opts.preflight?.();
+    throw new Error("the wallet should not be reached");
+  });
+  const { result } = renderHook(() => useFlagProposal(), { wrapper: withQuery() });
+  await act(async () => { await result.current.submit(input); });
+  return result.current;
+}
 
 describe("useFlagProposal", () => {
   beforeEach(() => {
@@ -20,7 +44,7 @@ describe("useFlagProposal", () => {
       address: WALLET, isConnected: true, chainId: GENLAYER_STUDIO_NEXT_ID, connector: { getProvider: async () => ({ request: vi.fn() }) },
     } as never);
     vi.mocked(useSwitchChain).mockReturnValue({ switchChainAsync: vi.fn(), isPending: false } as never);
-    vi.mocked(readView).mockImplementation(async (name: string) => (name === "get_security_pool" ? { guardian: "0x1" } : 0) as never);
+    chain();
   });
 
   it("uses exactly 2.0 GEN as the bond", () => {
@@ -68,15 +92,16 @@ describe("useFlagProposal", () => {
     expect(result.current.busy).toBe(false);
 
     const call = vi.mocked(sendWrite).mock.calls[0][0];
+    expect(call.functionName).toBe("flag_proposal");
     expect(call.value).toBe(parseEther("2.0"));
-    expect(call.args).toEqual([DAO, 42n, "https://forum.example-dao.org/t/42", [TOKEN], [input.calldatas[0]]]);
+    expect(call.args).toEqual([DAO_KEY, 42n]);   // normalised key, and no payload at all
 
     const refetched = invalidate.mock.calls.map((c) => (c[0] as { queryKey: string[] }).queryKey[0]);
-    expect(refetched).toEqual(expect.arrayContaining(["proposals", "daos", "ledger"]));
+    expect(refetched).toEqual(expect.arrayContaining(["proposals", "daos", "ledger", "committed"]));
   });
 
   it("decodes a contract revert into a readable error", async () => {
-    vi.mocked(sendWrite).mockRejectedValue(new ContractRevertError("[EXPECTED] this proposal payload was already flagged", "0xdead"));
+    vi.mocked(sendWrite).mockRejectedValue(new ContractRevertError("[EXPECTED] this proposal is already flagged", "0xdead"));
     const { result } = renderHook(() => useFlagProposal(), { wrapper: withQuery() });
     let ok = true;
     await act(async () => { ok = await result.current.submit(input); });
@@ -86,14 +111,14 @@ describe("useFlagProposal", () => {
     expect(result.current.hash).toBe("0xdead");
   });
 
-  it("stops in preflight for an unregistered DAO without reaching the wallet", async () => {
-    vi.mocked(readView).mockImplementation(async () => ({ guardian: "" }) as never);
-    vi.mocked(sendWrite).mockImplementation(async (opts) => {
-      await opts.preflight?.();
-      throw new Error("wallet should not be reached");
-    });
-    const { result } = renderHook(() => useFlagProposal(), { wrapper: withQuery() });
-    await act(async () => { await result.current.submit(input); });
-    expect(result.current.error?.code).toBe("DAO_NOT_REGISTERED");
+  it.each([
+    ["an unregistered DAO", { get_security_pool: { guardian: "" } }, "DAO_NOT_REGISTERED"],
+    ["a proposal the DAO never committed", { get_committed_proposal: new Error("execution failed") }, "NOT_COMMITTED"],
+    ["a proposal that is already flagged", { get_committed_proposal: { flag_id: 5 } }, "ALREADY_FLAGGED"],
+    ["an active cooling period", { get_cooldown_until: Math.floor(Date.now() / 1000) + 600 }, "COOLING_PERIOD"],
+  ])("stops in preflight for %s without reaching the wallet", async (_label, overrides, code) => {
+    const hook = await submitAndCollect(overrides);
+    expect(hook.error?.code).toBe(code);
+    expect(hook.isError).toBe(true);
   });
 });

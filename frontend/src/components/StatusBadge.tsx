@@ -7,6 +7,7 @@ const MAP: Record<ProposalStatus, { label: string; cls: string }> = {
   FLAGGED_MALICIOUS: { label: "Flagged malicious", cls: "badge-crit" },
   CHALLENGED_PAUSED: { label: "Appeal pending", cls: "badge-warn" },
   RESOLVED_DISPUTED: { label: "Dispute resolved", cls: "badge-mute" },
+  EXPIRED: { label: "Expired, bond returned", cls: "badge-mute" },
 };
 
 export function StatusBadge({ status }: { status: ProposalStatus }) {

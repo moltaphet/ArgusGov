@@ -1,38 +1,44 @@
 "use client";
 
-import { AlertTriangle, Flag, Network, Plus, Wallet, X } from "lucide-react";
+import { AlertTriangle, ExternalLink, Flag, Network, ShieldCheck, Wallet, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { decodeAction } from "@/lib/decode";
-import { formatGen } from "@/lib/format";
 import { useChainGate } from "@/hooks/useChainGate";
 import { CHALLENGE_BOND, useFlagProposal } from "@/hooks/useFlagProposal";
-import { MONITORED_DAOS, PROTOCOL } from "@/lib/networks";
+import { decodeActions } from "@/lib/decode";
+import { formatGen, formatTokens, shortAddress } from "@/lib/format";
+import type { CommittedProposal } from "@/lib/types";
+import { CopyButton } from "./CopyButton";
+import { Identicon } from "./Identicon";
 import { Spinner } from "./Spinner";
 import { TxProgress } from "./TxProgress";
 
-interface Row { target: string; calldata: string }
-const ADDR = /^0x[0-9a-fA-F]{40}$/;
-const HEX = /^0x([0-9a-fA-F]{2})*$/;
+const keyOf = (c: Pick<CommittedProposal, "daoKey" | "daoProposalId">) => `${c.daoKey}#${c.daoProposalId}`;
 
-function validUrl(value: string): boolean {
+function hostOf(url: string): string {
   try {
-    const u = new URL(value);
-    return (u.protocol === "https:" || u.protocol === "http:") && !u.username && value.length <= 512;
+    return new URL(url).hostname;
   } catch {
-    return false;
+    return url;
   }
 }
 
-export function FlagProposalModal({ open, onClose, knownDaos }: { open: boolean; onClose: () => void; knownDaos: string[] }) {
+/**
+ * Challenge a proposal the DAO has committed. The challenger picks one; its targets, values,
+ * calldata and forum link are the DAO's own commitment and are shown read-only, so there is
+ * nothing to paste and nothing to forge.
+ */
+export function FlagProposalModal({ open, onClose, committed, loading = false, preselect }: {
+  open: boolean;
+  onClose: () => void;
+  committed: CommittedProposal[];
+  loading?: boolean;
+  preselect?: { daoKey: string; proposalId: number };
+}) {
   const gate = useChainGate(CHALLENGE_BOND);
   const flag = useFlagProposal();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [dao, setDao] = useState("");
-  const [proposalId, setProposalId] = useState("");
-  const [forumUrl, setForumUrl] = useState("");
-  const [rows, setRows] = useState<Row[]>([{ target: "", calldata: "" }]);
+  const [selected, setSelected] = useState<string | null>(null);
   const [ack, setAck] = useState(false);
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const el = dialog.current;
@@ -47,97 +53,100 @@ export function FlagProposalModal({ open, onClose, knownDaos }: { open: boolean;
     }
   }, [open]);
 
-  const daoOptions = useMemo(() => Array.from(new Set([...knownDaos, ...MONITORED_DAOS])), [knownDaos]);
+  // Only proposals nobody has flagged are open for challenge.
+  const openProposals = useMemo(() => committed.filter((c) => c.flagId === 0 && !c.frozen), [committed]);
+  useEffect(() => {
+    if (preselect) setSelected(`${preselect.daoKey}#${preselect.proposalId}`);
+  }, [preselect]);
+
+  const chosen = openProposals.find((c) => keyOf(c) === selected);
+  const actions = useMemo(() => (chosen ? decodeActions(chosen.targets, chosen.calldatas, chosen.values) : []), [chosen]);
   const bond = CHALLENGE_BOND;
 
-  const fieldErrors = {
-    dao: ADDR.test(dao) ? "" : "Enter the DAO timelock address (0x + 40 hex characters).",
-    proposalId: /^\d+$/.test(proposalId) ? "" : "Use a non-negative whole number.",
-    forumUrl: validUrl(forumUrl) ? "" : "Enter a public http(s) link to the forum post.",
-  };
-  const rowErrors = rows.map((r) => ({
-    target: ADDR.test(r.target) ? "" : "Target must be a 0x address.",
-    calldata: r.calldata.trim() !== "" && HEX.test(r.calldata.trim()) ? "" : "Calldata must be even-length 0x hex.",
-  }));
-  const valid = !fieldErrors.dao && !fieldErrors.proposalId && !fieldErrors.forumUrl && rowErrors.every((r) => !r.target && !r.calldata);
-  const canSubmit = gate.ready && valid && ack && !flag.busy;
-  // The first reason the button is unavailable, shown next to it.
+  const canSubmit = gate.ready && Boolean(chosen) && ack && !flag.busy;
   const blocker = !gate.isConnected ? "Connect a wallet to submit."
     : gate.wrongChain ? "Switch to GenLayer Studio Next to continue."
     : gate.insufficientFunds ? `Balance is below the ${formatGen(bond)} GEN bond.`
-    : !valid ? "Complete every field to continue."
+    : !chosen ? "Select a committed proposal to challenge."
     : !ack ? "Acknowledge the bond terms to continue." : "";
 
   async function submit() {
-    const ok = await flag.submit({ daoAddress: dao, proposalId, forumUrl, targets: rows.map((r) => r.target), calldatas: rows.map((r) => r.calldata) });
+    if (!chosen) return;
+    const ok = await flag.submit({ daoKey: chosen.daoKey, proposalId: chosen.daoProposalId });
     if (ok) setTimeout(onClose, 1800);
   }
 
-  const update = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const touch = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
-  const err = (k: string, msg: string) => (touched[k] && msg ? <p className="mt-1 text-[11px] text-rose-300">{msg}</p> : null);
-
   return (
     <dialog ref={dialog} onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()} aria-labelledby="flag-title"
-      className="m-auto w-[min(660px,94vw)] max-h-[92vh] overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/70 p-0 text-zinc-200 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+      className="m-auto w-[min(680px,94vw)] max-h-[92vh] overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/70 p-0 text-zinc-200 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
       <div className="scroll max-h-[92vh] overflow-auto p-6">
         <div className="mb-5 flex items-start justify-between">
           <div>
             <h2 id="flag-title" className="text-base font-semibold text-zinc-100">Challenge a proposal</h2>
-            <p className="mt-1 text-xs text-zinc-500">Flag a proposal whose forum description does not match what its calldata executes.</p>
+            <p className="mt-1 max-w-md text-xs leading-relaxed text-zinc-500">
+              Choose a proposal its DAO has committed. The payload below is the DAO&apos;s own commitment, so you pick what to challenge and never supply the calldata.
+            </p>
           </div>
           <button className="btn btn-quiet !p-1.5" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
 
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-[1fr_130px]">
-            <label className="block"><span className="eyebrow">DAO timelock</span>
-              <input className="field mt-1.5 font-mono text-[13px]" list="dao-options" placeholder="0x…" value={dao} aria-invalid={touched.dao && !!fieldErrors.dao}
-                onChange={(e) => setDao(e.target.value.trim())} onBlur={() => touch("dao")} />
-              <datalist id="dao-options">{daoOptions.map((d) => <option key={d} value={d} />)}</datalist>
-              {err("dao", fieldErrors.dao)}
-            </label>
-            <label className="block"><span className="eyebrow">Proposal id</span>
-              <input className="field mt-1.5 font-mono" inputMode="numeric" placeholder="42" value={proposalId} aria-invalid={touched.pid && !!fieldErrors.proposalId}
-                onChange={(e) => setProposalId(e.target.value.trim())} onBlur={() => touch("pid")} />
-              {err("pid", fieldErrors.proposalId)}
-            </label>
-          </div>
-          <label className="block"><span className="eyebrow">Forum URL</span>
-            <input className="field mt-1.5" placeholder="https://forum.example-dao.org/t/proposal-42" value={forumUrl} aria-invalid={touched.url && !!fieldErrors.forumUrl}
-              onChange={(e) => setForumUrl(e.target.value.trim())} onBlur={() => touch("url")} />
-            {err("url", fieldErrors.forumUrl)}
-          </label>
-
           <div>
-            <div className="eyebrow mb-1.5">Execution actions ({rows.length}/{PROTOCOL.maxActions})</div>
-            <div className="space-y-2.5">
-              {rows.map((r, i) => {
-                const decoded = ADDR.test(r.target) && HEX.test(r.calldata.trim()) && r.calldata.trim() !== "" ? decodeAction(i, r.target, r.calldata.trim().toLowerCase()) : null;
+            <div className="eyebrow mb-1.5">Committed proposals open for challenge</div>
+            {loading && <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" aria-busy />}
+            {!loading && openProposals.length === 0 && (
+              <div className="surface-inset p-4 text-xs leading-relaxed text-zinc-400">
+                No committed proposals are open for challenge. A proposal can be flagged only after its DAO&apos;s guardian or timelock commits it, and only once.
+              </div>
+            )}
+            <div role="radiogroup" aria-label="Committed proposals" className="space-y-2">
+              {openProposals.map((c) => {
+                const on = keyOf(c) === selected;
                 return (
-                  <div key={i} className="surface-inset space-y-2 p-3">
-                    <div className="flex gap-2">
-                      <input className="field font-mono text-[12.5px]" placeholder="Target 0x…" value={r.target} aria-label={`Action ${i + 1} target`}
-                        aria-invalid={touched[`t${i}`] && !!rowErrors[i].target} onChange={(e) => update(i, { target: e.target.value.trim() })} onBlur={() => touch(`t${i}`)} />
-                      {rows.length > 1 && <button className="btn btn-quiet !p-2" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} aria-label={`Remove action ${i + 1}`}><X size={14} /></button>}
-                    </div>
-                    {err(`t${i}`, rowErrors[i].target)}
-                    <textarea className="field min-h-[64px] font-mono text-[12.5px]" placeholder="Calldata 0x…" value={r.calldata} aria-label={`Action ${i + 1} calldata`}
-                      aria-invalid={touched[`c${i}`] && !!rowErrors[i].calldata} onChange={(e) => update(i, { calldata: e.target.value })} onBlur={() => touch(`c${i}`)} />
-                    {err(`c${i}`, rowErrors[i].calldata)}
-                    {decoded?.selector && (
-                      <div className="text-[11px] text-zinc-500">Decodes to <span className="font-mono text-indigo-300">{decoded.signature}</span>
-                        {decoded.details.map((d) => <span key={d.label}> · {d.label} <span className="font-mono text-zinc-300">{d.value.split(" ")[0].slice(0, 20)}</span></span>)}
-                      </div>
-                    )}
-                  </div>
+                  <button key={keyOf(c)} type="button" role="radio" aria-checked={on} onClick={() => setSelected(keyOf(c))}
+                    className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 ${on ? "border-indigo-400/50 bg-indigo-400/[0.08]" : "border-white/[0.07] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.04]"}`}>
+                    <Identicon address={c.daoAddress} size={32} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-zinc-100">Proposal #{c.daoProposalId}</span>
+                      <span className="block truncate font-mono text-[11px] text-zinc-500">{shortAddress(c.daoAddress, 8, 6)} · chain {c.chainId} · {hostOf(c.forumUrl)}</span>
+                    </span>
+                    <span className="badge badge-mute font-mono">{c.targets.length} action{c.targets.length === 1 ? "" : "s"}</span>
+                  </button>
                 );
               })}
             </div>
-            {rows.length < PROTOCOL.maxActions && (
-              <button className="btn btn-glass mt-2.5" onClick={() => setRows((rs) => [...rs, { target: "", calldata: "" }])}><Plus size={13} /> Add action</button>
-            )}
           </div>
+
+          {chosen && (
+            <div className="surface-inset space-y-3 p-4" aria-label="Committed payload">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-300"><ShieldCheck size={13} className="text-emerald-300" /> Committed by the DAO, read-only</span>
+                <a href={chosen.forumUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-indigo-300 hover:underline">
+                  {hostOf(chosen.forumUrl)} <ExternalLink size={10} />
+                </a>
+              </div>
+              <ul className="space-y-1.5">
+                {actions.map((a) => (
+                  <li key={a.index} className="rounded-lg bg-black/25 px-3 py-2 text-[12px]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="badge badge-mute font-mono">{a.category.replace(/_/g, " ")}</span>
+                      <span className="font-mono text-zinc-300">{a.signature}</span>
+                      <span className="font-mono text-zinc-600">→ {shortAddress(a.target)}</span>
+                    </div>
+                    {a.details.map((d) => (
+                      <div key={d.label} className="mt-1 flex gap-2 pl-1 font-mono text-[11px]">
+                        <span className="text-zinc-600">{d.label}:</span>
+                        <span className="break-all text-zinc-300">{d.label === "amount" && a.amountRaw !== undefined ? `${formatTokens(a.amountRaw)} tokens` : d.value}</span>
+                      </div>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-1 font-mono text-[11px] text-zinc-500">
+                commitment {shortAddress(chosen.payloadHash, 10, 6)}<CopyButton value={chosen.payloadHash} label="Copy payload hash" />
+              </div>
+            </div>
+          )}
 
           {gate.wrongChain && (
             <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.08] p-3 text-xs text-amber-100">
@@ -148,7 +157,6 @@ export function FlagProposalModal({ open, onClose, knownDaos }: { open: boolean;
             </div>
           )}
 
-          {/* Bond */}
           <div className="surface-inset p-4">
             <div className="flex items-baseline justify-between">
               <span className="eyebrow">Challenge bond (exact)</span>
@@ -163,7 +171,7 @@ export function FlagProposalModal({ open, onClose, knownDaos }: { open: boolean;
             {gate.insufficientFunds && <p role="alert" className="mt-2 text-[11px] text-rose-300">Insufficient balance: the bond alone needs {formatGen(bond)} GEN, before network fees.</p>}
             <div className="mt-3 flex gap-2.5 rounded-lg border border-amber-500/25 bg-amber-500/[0.07] p-3 text-xs leading-relaxed text-amber-200/90">
               <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-              <span><strong className="font-semibold">{formatGen(bond)} GEN bond will be slashed if proposal is verified safe</strong> (half to the DAO, half burned) and you are locked out of flagging for 4 hours. If the breaker trips, the bond is returned with 10% of the DAO pool after the 24h appeal window.</span>
+              <span><strong className="font-semibold">{formatGen(bond)} GEN bond will be slashed if proposal is verified safe</strong> (half to the DAO, half burned) and you are locked out of flagging for 4 hours. If the breaker trips, the bond is returned with the bounty reserved at flag time after the 24h appeal window.</span>
             </div>
             <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs text-zinc-300">
               <input type="checkbox" className="mt-0.5 h-3.5 w-3.5 accent-rose-500" checked={ack} onChange={(e) => setAck(e.target.checked)} />

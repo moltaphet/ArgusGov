@@ -6,7 +6,8 @@ export type LifecycleEvent =
   | { type: "inspect"; score: number }
   | { type: "settle" }
   | { type: "appeal" }
-  | { type: "resolve"; score: number };
+  | { type: "resolve"; score: number }
+  | { type: "expire" };
 
 export interface LifecycleState {
   status: ProposalStatus;
@@ -24,12 +25,14 @@ export function applyEvent(state: LifecycleState, event: LifecycleEvent): Lifecy
       return state.status === "ANALYZING" ? { ...state, status: isMalicious(state.score) ? "FLAGGED_MALICIOUS" : "VERIFIED_SAFE" } : state;
     case "appeal":
       return state.status === "FLAGGED_MALICIOUS" ? { ...state, status: "CHALLENGED_PAUSED" } : state;
+    case "expire":
+      return state.status === "REGISTERED" ? { ...state, status: "EXPIRED" } : state;
     case "resolve":
       return state.status === "CHALLENGED_PAUSED" ? { status: "RESOLVED_DISPUTED", score: event.score } : state;
   }
 }
 
-export type ActionId = "inspect" | "settle" | "appeal" | "claim";
+export type ActionId = "inspect" | "settle" | "appeal" | "claim" | "unfreeze" | "expire";
 
 export interface ActionContext {
   /** Lower-case address of the connected wallet, if any. */
@@ -52,7 +55,17 @@ export interface ActionAvailability {
 export function availableActions(p: Proposal, ctx: ActionContext): ActionAvailability[] {
   const out: ActionAvailability[] = [];
   const windowEnd = p.flaggedAt + PROTOCOL.appealWindowSeconds;
-  if (p.status === "REGISTERED") out.push({ id: "inspect", label: "Inspect Consensus", enabled: true });
+  if (p.status === "REGISTERED") {
+    out.push({ id: "inspect", label: "Inspect Consensus", enabled: true });
+    const expiresAt = p.proposedAt + PROTOCOL.flagExpirySeconds;
+    out.push({
+      id: "expire", label: "Reclaim Abandoned Bond", enabled: ctx.now >= expiresAt,
+      reason: ctx.now >= expiresAt ? undefined : "An uninspected flag can be reclaimed 7 days after it was raised.",
+    });
+  }
+  if (p.status === "RESOLVED_DISPUTED" && p.resolution === "APPEAL_ACCEPTED" && p.frozen) {
+    out.push({ id: "unfreeze", label: "Lift Freeze", enabled: true });
+  }
   if (p.status === "ANALYZING") out.push({ id: "settle", label: "Execute Circuit Breaker", enabled: true });
   if (p.status === "FLAGGED_MALICIOUS") {
     const open = ctx.now < windowEnd;

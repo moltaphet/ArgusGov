@@ -14,6 +14,17 @@ describe("contract error decoder", () => {
     ["[EXPECTED] only the DAO guardian can appeal", "Guardian only"],
     ["[EXPECTED] proposal is not awaiting inspection", "Already inspected"],
     ["[LLM_ERROR] is_malicious contradicts score", "Validators could not agree"],
+    ["[EXPECTED] Proposal not committed by DAO", "Proposal not committed"],
+    ["[EXPECTED] proposal already committed", "Already committed"],
+    ["[EXPECTED] only the DAO guardian or the timelock can commit proposals", "Guardian or timelock only"],
+    ["[EXPECTED] only the timelock can claim guardianship", "Timelock only"],
+    ["[EXPECTED] invalid dao_key: expected chain_id:0xaddress", "Invalid DAO key"],
+    ["[EXPECTED] values must have one entry per target", "Check the native values"],
+    ["[EXPECTED] freeze is still justified", "Freeze still justified"],
+    ["[EXPECTED] proposal is not frozen", "Not frozen"],
+    ["[EXPECTED] flag has not expired", "Flag has not expired"],
+    ["[EXPECTED] only an uninspected flag can expire", "Cannot expire"],
+    ["[EXPECTED] amount exceeds withdrawable pool", "Amount too large"],
   ])("maps %s", (raw, title) => {
     expect(decodeContractError(new ContractRevertError(raw)).title).toBe(title);
   });

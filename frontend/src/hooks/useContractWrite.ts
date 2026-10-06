@@ -19,8 +19,8 @@ const PHASE_DETAIL: Record<string, string> = {
   decided: "Consensus decided and recorded on-chain.",
 };
 
-/** Query keys that hold dashboard statistics and monitored proposals. */
-const DASHBOARD_KEYS = [["proposals"], ["daos"], ["ledger"], ["consensus"]] as const;
+/** Query keys that hold dashboard statistics, monitored proposals and the committed-proposal list. */
+const DASHBOARD_KEYS = [["proposals"], ["committed"], ["daos"], ["ledger"], ["verdict"], ["consensus"]] as const;
 
 export interface RunOptions {
   value?: bigint;

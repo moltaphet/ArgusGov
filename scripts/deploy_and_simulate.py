@@ -36,6 +36,8 @@ ATTO = 10**18
 BOND = 2 * ATTO
 POOL = 100 * ATTO
 TIMELOCK = "0x" + "d1" * 20
+CHAIN_ID = 61997
+DAO_KEY = f"{CHAIN_ID}:{TIMELOCK}"
 TOKEN = "0x" + "70" * 20
 PROXY = "0x" + "9a" * 20
 ATTACKER = "0x" + "ee" * 20
@@ -93,14 +95,16 @@ def run_direct() -> int:
         argus = deploy_contract(CONTRACT, vm)
         banner("DEPLOY  ArgusGov deployed in-memory; DAO guardian registers a 100 GEN security pool")
         call(guardian, POOL)
-        argus.register_dao(TIMELOCK)
+        argus.register_dao(DAO_KEY)
         ledger(argus)
 
         # --- Scenario 1: honest proposal, griefing challenger -----------------
         banner("SCENARIO 1  Honest proposal. A griefer flags it anyway.")
+        call(guardian)
+        argus.commit_proposal(DAO_KEY, 101, [TOKEN], [0], [transfer_calldata("0x" + "a1" * 20, 5_000 * ATTO)],
+                              "https://forum.dao.example/t/101")
         call(challenger, BOND)
-        rid = argus.flag_proposal(TIMELOCK, 101, "https://forum.dao.example/t/101", [TOKEN],
-                                  [transfer_calldata("0x" + "a1" * 20, 5_000 * ATTO)])
+        rid = argus.flag_proposal(DAO_KEY, 101)
         validators(6, "Marketing grant: transfer 5,000 tokens to the growth guild.",
                    "Calldata transfers exactly the 5,000 tokens the post describes.")
         call(keeper)
@@ -115,16 +119,18 @@ def run_direct() -> int:
         # --- Scenario 2: hidden treasury drain --------------------------------
         banner("SCENARIO 2  Hidden drain: 'marketing grant of 5k tokens' executes transfer(treasury)")
         at(5 * 3600)
+        call(guardian)
+        argus.commit_proposal(DAO_KEY, 102, [TOKEN], [0], [transfer_calldata(ATTACKER, 9_999_999 * ATTO)],
+                              "https://forum.dao.example/t/102")
         call(challenger, BOND)
-        rid = argus.flag_proposal(TIMELOCK, 102, "https://forum.dao.example/t/102", [TOKEN],
-                                  [transfer_calldata(ATTACKER, 9_999_999 * ATTO)])
+        rid = argus.flag_proposal(DAO_KEY, 102)
         validators(97, "Marketing grant of 5k tokens for the Q3 campaign.",
                    "Post declares a 5k grant; calldata moves 9,999,999 tokens to an unknown address.")
         call(keeper)
         score = argus.inspect_proposal(rid)
         status = argus.execute_circuit_breaker(rid)
         print(f"  consensus score={score} -> {status}")
-        print(f"  execution frozen for DAO proposal 102: {argus.is_execution_frozen(TIMELOCK, 102)}")
+        print(f"  execution frozen for DAO proposal 102: {argus.is_execution_frozen(DAO_KEY, 102)}")
         ledger(argus)
         at(5 * 3600 + 24 * 3600)
         call(challenger)
@@ -136,9 +142,11 @@ def run_direct() -> int:
         # --- Scenario 3: proxy upgrade, DAO appeals and loses -----------------
         banner("SCENARIO 3  'Minor gas patch' repoints the proxy; guardian appeals and loses")
         at(2 * 24 * 3600)
+        call(guardian)
+        argus.commit_proposal(DAO_KEY, 103, [PROXY], [0], [upgrade_calldata(ATTACKER)],
+                              "https://forum.dao.example/t/103")
         call(challenger, BOND)
-        rid = argus.flag_proposal(TIMELOCK, 103, "https://forum.dao.example/t/103", [PROXY],
-                                  [upgrade_calldata(ATTACKER)])
+        rid = argus.flag_proposal(DAO_KEY, 103)
         validators(94, "Minor gas optimisation patch. No behavioural change.",
                    "upgradeTo() points the proxy at an unverified implementation.")
         call(keeper)
@@ -251,7 +259,11 @@ def run_network(endpoint: str, forum_url: str) -> int:
         receipt = client.wait_for_transaction_receipt(
             transaction_hash=tx_hash, wait_until="decided", retries=200, interval=3000,
             full_transaction=True)
+        execution = receipt.get("tx_execution_result_name") or receipt.get("txExecutionResultName")
+        leader = ((receipt.get("consensus_data") or {}).get("leader_receipt") or [{}])[0]
         entry = {"label": label, "tx_hash": tx_hash, "proposal_id": proposal_id or None,
+                 "execution": execution,
+                 "revert_message": (leader.get("result") or {}).get("payload") if execution != "FINISHED_WITH_RETURN" else None,
                  "explorer_url": f"{STUDIO_NEXT_EXPLORER}/transactions/{tx_hash}",
                  "consensus": _consensus_proof(receipt)}
         record["transactions"].append(entry)
@@ -282,19 +294,24 @@ def run_network(endpoint: str, forum_url: str) -> int:
     save()
     print(f"  contract: {address}")
 
-    send("register_dao", "register_dao", [TIMELOCK], guardian, POOL)
-    send("flag_proposal", "flag_proposal",
-         [TIMELOCK, 1, forum_url, [TOKEN], [transfer_calldata(ATTACKER, 9_999_999 * ATTO)]],
-         challenger, BOND, proposal_id=1)
+    calldata = transfer_calldata(ATTACKER, 9_999_999 * ATTO)
+    send("register_dao", "register_dao", [DAO_KEY], guardian, POOL)
+    send("commit_proposal", "commit_proposal", [DAO_KEY, 1, [TOKEN], [0], [calldata], forum_url], guardian, proposal_id=1)
+    # Negative test: a challenger cannot flag a proposal the DAO never committed.
+    send("flag_uncommitted_rejected", "flag_proposal", [DAO_KEY, 999], challenger, BOND)
+    send("flag_proposal", "flag_proposal", [DAO_KEY, 1], challenger, BOND, proposal_id=1)
     send("inspect_proposal", "inspect_proposal", [1], challenger, proposal_id=1)
     proposal = read("get_proposal", [1])
     print(f"  consensus verdict: status={proposal['status']} score={proposal['threat_score']}")
     if proposal["status"] == "ANALYZING":
         send("execute_circuit_breaker", "execute_circuit_breaker", [1], challenger, proposal_id=1)
         proposal = read("get_proposal", [1])
+    record["dao_key"] = DAO_KEY
     record["final_proposal"] = proposal
+    record["committed_proposal"] = read("get_committed_proposal", [DAO_KEY, 1])
+    record["verdict"] = read("get_proposal_verdict", [DAO_KEY, 1])
     record["ledger"] = read("get_ledger", [])
-    record["execution_frozen"] = read("is_execution_frozen", [TIMELOCK, 1])
+    record["execution_frozen"] = read("is_execution_frozen", [DAO_KEY, 1])
     record["solvent"] = read("solvency", [])
     save()
     print(f"  final status: {proposal['status']}  frozen={record['execution_frozen']}")

@@ -2,22 +2,23 @@ export { EXPLORER_URL, GENLAYER_STUDIO_NEXT_ID, genlayerStudioNext, RPC_URL } fr
 
 // Deployment recorded in deployments/studio-next.json.
 export const ARGUS_ADDRESS = (process.env.NEXT_PUBLIC_ARGUS_ADDRESS ??
-  "0x34F50f2A05f7d56B5B0B827862D33B22f63d767A") as `0x${string}`;
+  "0xA67CecB7e333c01727f1Dd6C448FbFF693AcE34D") as `0x${string}`;
 
-// ArgusGov has no on-chain DAO enumeration, so the dashboard unions the DAOs it
-// finds on flagged proposals with this list of timelocks to watch.
+// DAOs are identified by "<chain_id>:<0xtimelock>". The dashboard enumerates registered DAOs
+// on-chain; this list adds keys to show before anything is registered or committed.
 export const MONITORED_DAOS: string[] = (
-  process.env.NEXT_PUBLIC_MONITORED_DAOS ?? "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+  process.env.NEXT_PUBLIC_MONITORED_DAOS ?? "61997:0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
 )
   .split(",")
   .map((a) => a.trim().toLowerCase())
-  .filter((a) => /^0x[0-9a-f]{40}$/.test(a));
+  .filter((a) => /^\d{1,20}:0x[0-9a-f]{40}$/.test(a));
 
 // Protocol constants, mirrored from contracts/argus_gov.py.
 export const PROTOCOL = {
   minChallengeBond: 2n * 10n ** 18n,
   threatThreshold: 75,
   appealWindowSeconds: 24 * 3600,
+  flagExpirySeconds: 7 * 24 * 3600,
   coolingSeconds: 4 * 3600,
   maxActions: 10,
 } as const;

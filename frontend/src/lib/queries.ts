@@ -4,16 +4,21 @@ import { useQuery } from "@tanstack/react-query";
 import { readView } from "./genlayer";
 import { MONITORED_DAOS } from "./networks";
 import { toBig } from "./format";
-import type { DaoSummary, Ledger, Proposal, ProposalStatus, SecurityPool } from "./types";
+import type { CommittedProposal, DaoSummary, Ledger, Proposal, ProposalStatus, SecurityPool } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+export const daoAddressOf = (daoKey: string): string => daoKey.slice(daoKey.indexOf(":") + 1);
+export const daoChainOf = (daoKey: string): number => Number(daoKey.slice(0, daoKey.indexOf(":")));
+
 function toProposal(raw: any, frozen: boolean): Proposal {
   return {
     id: Number(raw.id),
+    daoKey: String(raw.dao_key),
     daoAddress: String(raw.dao_address),
     daoProposalId: Number(raw.dao_proposal_id),
     forumUrl: String(raw.forum_url),
     targets: raw.targets ?? [],
+    values: (raw.values ?? []).map(toBig),
     calldatas: raw.calldatas ?? [],
     proposedAt: Number(raw.proposed_at),
     challenger: String(raw.challenger),
@@ -29,6 +34,24 @@ function toProposal(raw: any, frozen: boolean): Proposal {
     rewardClaimed: Boolean(raw.reward_claimed),
     resolution: String(raw.resolution ?? ""),
     frozen,
+  };
+}
+
+export function toCommitted(raw: any): CommittedProposal {
+  return {
+    daoKey: String(raw.dao_key),
+    daoAddress: String(raw.dao_address),
+    chainId: Number(raw.chain_id),
+    daoProposalId: Number(raw.dao_proposal_id),
+    forumUrl: String(raw.forum_url),
+    targets: raw.targets ?? [],
+    values: (raw.values ?? []).map(toBig),
+    calldatas: raw.calldatas ?? [],
+    payloadHash: String(raw.payload_hash ?? ""),
+    committedBy: String(raw.committed_by ?? ""),
+    committedAt: Number(raw.committed_at),
+    flagId: Number(raw.flag_id),
+    frozen: Boolean(raw.frozen),
   };
 }
 
@@ -50,7 +73,7 @@ async function withoutProbeNoise<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Proposals are enumerated by probing ids 1..n until the contract reverts. */
+/** Flag records are enumerated by probing ids 1..n until the contract reverts. */
 function loadProposals(): Promise<Proposal[]> {
   return withoutProbeNoise(probeProposals);
 }
@@ -66,7 +89,7 @@ async function probeProposals(): Promise<Proposal[]> {
     }
     let frozen = false;
     try {
-      frozen = Boolean(await readView<boolean>("is_execution_frozen", [raw.dao_address, BigInt(raw.dao_proposal_id)]));
+      frozen = Boolean(await readView<boolean>("is_execution_frozen", [raw.dao_key, BigInt(raw.dao_proposal_id)]));
     } catch {
       /* freeze flag is best-effort */
     }
@@ -75,14 +98,28 @@ async function probeProposals(): Promise<Proposal[]> {
   return out;
 }
 
-async function loadPool(dao: string): Promise<SecurityPool | null> {
+async function loadCommitted(): Promise<CommittedProposal[]> {
+  const count = Number(await readView<number>("get_committed_count"));
+  const rows = await Promise.all(Array.from({ length: Math.min(count, 200) }, (_, i) => readView<any>("get_committed_at", [BigInt(i)])));
+  return rows.map(toCommitted);
+}
+
+async function loadDaoKeys(): Promise<string[]> {
+  const count = Number(await readView<number>("get_dao_count"));
+  return Promise.all(Array.from({ length: Math.min(count, 200) }, (_, i) => readView<string>("get_dao_key_at", [BigInt(i)])));
+}
+
+async function loadPool(daoKey: string): Promise<SecurityPool | null> {
   try {
-    const raw = await readView<any>("get_security_pool", [dao]);
+    const raw = await readView<any>("get_security_pool", [daoKey]);
     if (!raw.guardian) return null;
     return {
-      daoAddress: dao,
+      daoKey,
+      daoAddress: String(raw.dao_address),
       guardian: String(raw.guardian),
       stake: toBig(raw.stake),
+      locked: toBig(raw.locked),
+      withdrawable: toBig(raw.withdrawable),
       minChallengeBond: toBig(raw.min_challenge_bond),
       coolingPeriod: Number(raw.challenge_cooling_period),
     };
@@ -95,24 +132,44 @@ export function useProposals() {
   return useQuery({ queryKey: ["proposals"], queryFn: loadProposals, refetchInterval: 15_000 });
 }
 
+export function useCommitted() {
+  return useQuery({ queryKey: ["committed"], queryFn: loadCommitted, refetchInterval: 15_000 });
+}
+
 export function useDaos() {
   const proposals = useProposals();
-  const addresses = Array.from(
-    new Set([...MONITORED_DAOS, ...(proposals.data ?? []).map((p) => p.daoAddress.toLowerCase())]),
+  const committed = useCommitted();
+  const registered = useQuery({ queryKey: ["daos", "keys"], queryFn: loadDaoKeys, refetchInterval: 30_000 });
+  const ready = proposals.isSuccess && registered.isSuccess;
+  const keys = Array.from(
+    new Set([
+      ...MONITORED_DAOS,
+      ...(registered.data ?? []),
+      ...(proposals.data ?? []).map((p) => p.daoKey),
+      ...(committed.data ?? []).map((c) => c.daoKey),
+    ].map((k) => k.toLowerCase())),
   );
   const daos = useQuery({
-    queryKey: ["daos", addresses.join(",")],
-    enabled: proposals.isSuccess,
+    queryKey: ["daos", "summaries", keys.join(",")],
+    enabled: ready,
     refetchInterval: 15_000,
     queryFn: async (): Promise<DaoSummary[]> =>
       Promise.all(
-        addresses.map(async (address) => {
-          const list = (proposals.data ?? []).filter((p) => p.daoAddress.toLowerCase() === address);
-          return { address, pool: await loadPool(address), proposals: list, paused: list.some((p) => p.frozen) };
+        keys.map(async (key) => {
+          const list = (proposals.data ?? []).filter((p) => p.daoKey.toLowerCase() === key);
+          return {
+            key,
+            address: daoAddressOf(key),
+            chainId: daoChainOf(key),
+            pool: await loadPool(key),
+            proposals: list,
+            committed: (committed.data ?? []).filter((c) => c.daoKey.toLowerCase() === key),
+            paused: list.some((p) => p.frozen),
+          };
         }),
       ),
   });
-  return { daos, proposals };
+  return { daos, proposals, committed };
 }
 
 export function useLedger() {
@@ -128,6 +185,27 @@ export function useLedger() {
         burnVault: toBig(raw.burn_vault),
         balance: toBig(raw.balance),
         solvent: Boolean(solvent),
+      };
+    },
+  });
+}
+
+/** The on-chain verdict for a committed proposal, including the full reasoning text. */
+export function useVerdict(daoKey: string, daoProposalId: number, enabled = true) {
+  return useQuery({
+    queryKey: ["verdict", daoKey, daoProposalId],
+    enabled,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const v = await readView<any>("get_proposal_verdict", [daoKey, BigInt(daoProposalId)]);
+      return {
+        flagged: Boolean(v.flagged),
+        status: String(v.status),
+        threatScore: Number(v.threat_score),
+        isMalicious: Boolean(v.is_malicious),
+        reasoning: String(v.reasoning ?? ""),
+        reasoningHash: String(v.reasoning_hash ?? ""),
+        payloadHash: String(v.payload_hash ?? ""),
       };
     },
   });

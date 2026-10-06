@@ -6,6 +6,7 @@ import { ARGUS_ADDRESS, EXPLORER_URL } from "@/lib/networks";
 import { useDaos, useLedger } from "@/lib/queries";
 import { shortAddress } from "@/lib/format";
 import { AboutSection } from "./AboutSection";
+import { CommitProposalPanel } from "./CommitProposalPanel";
 import { ConnectPill } from "./ConnectPill";
 import { ActivityLog, DaoList } from "./DaoRail";
 import { FAQSection } from "./FAQSection";
@@ -18,12 +19,12 @@ export function Dashboard() {
   const [flagOpen, setFlagOpen] = useState(false);
   const [daoFilter, setDaoFilter] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const { daos, proposals } = useDaos();
+  const { daos, proposals, committed } = useDaos();
   const ledger = useLedger();
 
   const visible = useMemo(() => {
     const all = [...(proposals.data ?? [])].sort((a, b) => b.id - a.id);
-    return daoFilter ? all.filter((p) => p.daoAddress.toLowerCase() === daoFilter) : all;
+    return daoFilter ? all.filter((p) => p.daoKey.toLowerCase() === daoFilter) : all;
   }, [proposals.data, daoFilter]);
   const onSelect = useCallback((id: number) => setSelectedId(id), []);
 
@@ -80,10 +81,12 @@ export function Dashboard() {
         </div>
       </main>
 
+      <div className="mt-5"><CommitProposalPanel daos={daos.data ?? []} /></div>
+
       <AboutSection />
       <FAQSection />
 
-      <FlagProposalModal open={flagOpen} onClose={() => setFlagOpen(false)} knownDaos={(daos.data ?? []).map((d) => d.address)} />
+      <FlagProposalModal open={flagOpen} onClose={() => setFlagOpen(false)} committed={committed.data ?? []} loading={committed.isLoading} />
     </div>
     <Footer />
     </>

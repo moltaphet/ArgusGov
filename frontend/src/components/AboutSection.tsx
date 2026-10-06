@@ -20,13 +20,13 @@ interface Stage {
 const STAGES: Stage[] = [
   {
     step: "01", label: "Proposal Ingestion", title: "Proposal Ingestion & Payload Binding", icon: <Radar size={18} />,
-    body: "A challenger submits a proposal's forum URL, target addresses and raw calldata together with a bond. ArgusGov validates every input, including an SSRF-safe forum link, and fingerprints the payload so it can only ever be adjudicated once.",
-    facts: ["SHA-256 payload hash", "Exact 2.0 GEN bond"],
+    body: "A DAO's guardian, or its timelock, commits what each proposal will execute: targets, native values, calldata and the forum link, fingerprinted with the keccak256 layout Governor contracts use. A challenger then flags it by id alone and posts a bond, so no one else can put forged calldata under a real proposal.",
+    facts: ["keccak256 commitment", "Flag by id, never by payload"],
     num: "from-indigo-200 to-indigo-500", node: "bg-indigo-300", ring: "border-indigo-300/50", glow: "shadow-[0_0_34px_-6px_rgba(129,140,248,0.55)]",
   },
   {
     step: "02", label: "GenVM Consensus", title: "GenVM Multi-Validator Consensus", icon: <BrainCircuit size={18} />,
-    body: "Each validator independently reads the forum thread, decodes function selectors and arguments in deterministic code, and has its LLM score the gap between declared intent and calldata. Validators agree only when scores land on the same side of 75 and within 20 points.",
+    body: "Each validator independently reads the forum thread, decodes function selectors, arguments and native values in deterministic code, and has its LLM score the gap between declared intent and calldata. Validators agree only when scores land on the same side of 75 and within 20 points.",
     facts: ["Deterministic decoding", "Leader + validator re-run"],
     num: "from-cyan-200 to-sky-500", node: "bg-cyan-300", ring: "border-cyan-300/50", glow: "shadow-[0_0_34px_-6px_rgba(34,211,238,0.5)]",
   },
@@ -47,8 +47,10 @@ const STAGES: Stage[] = [
 const INVARIANTS = [
   ["Conservation", "Contract balance always equals pool + escrow + claimable + burn vault."],
   ["Exact bonds", "Challenge and appeal bonds must match exactly; no change accrues."],
+  ["Committed payloads", "Only the guardian or timelock can commit a payload, once; a flag never carries one."],
   ["One settlement", "Every lifecycle step is legal from exactly one state."],
   ["Vesting first", "Rewards are claimable only after the appeal window closes."],
+  ["Reserved bounties", "A bounty is set aside when a flag is raised, so the pool cannot be drained from under a challenger."],
 ];
 
 export function AboutSection() {
@@ -144,9 +146,9 @@ export function AboutSection() {
       <div id="invariants" className="surface mt-8 scroll-mt-6 p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-zinc-100">Protocol invariants</h3>
-          <span className="font-mono text-[11px] text-zinc-500">enforced in contract, checked by 147 tests</span>
+          <span className="font-mono text-[11px] text-zinc-500">enforced in contract, checked by 224 tests</span>
         </div>
-        <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           {INVARIANTS.map(([name, text]) => (
             <div key={name} className="border-l border-emerald-400/30 pl-3.5">
               <dt className="text-xs font-semibold text-zinc-200">{name}</dt>
