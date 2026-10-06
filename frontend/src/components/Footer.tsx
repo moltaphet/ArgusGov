@@ -3,12 +3,9 @@
 import { ExternalLink, ShieldCheck } from "lucide-react";
 import { shortAddress } from "@/lib/format";
 import { ARGUS_ADDRESS, EXPLORER_URL } from "@/lib/networks";
+import { DOCS_URL, REPO_URL, TEST_SUITE_DETAIL, TEST_SUITE_LABEL } from "@/lib/project";
 import { useLedger } from "@/lib/queries";
 
-// The repository is configurable; without it the GitHub link falls back to the
-// maintainer profile and the test-suite badge stays a plain label.
-const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL;
-const GITHUB_URL = REPO_URL ?? "https://github.com/moltaphet";
 
 function NetworkPill() {
   const ledger = useLedger();
@@ -27,9 +24,9 @@ function NetworkPill() {
   );
 }
 
-function FooterLink({ href, children, external }: { href: string; children: React.ReactNode; external?: boolean }) {
+function FooterLink({ href, children, external, title }: { href: string; children: React.ReactNode; external?: boolean; title?: string }) {
   return (
-    <a href={href} {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+    <a href={href} title={title} {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
       className="inline-flex items-center gap-1 text-[13px] text-zinc-400 transition hover:text-zinc-100">
       {children}{external && <ExternalLink size={11} className="text-zinc-600" />}
     </a>
@@ -67,13 +64,9 @@ export function Footer() {
             <h4 className="eyebrow">Protocol</h4>
             <ul className="mt-3 space-y-2">
               <li><FooterLink href="#invariants">Protocol Invariants</FooterLink></li>
-              <li>
-                {REPO_URL
-                  ? <FooterLink href={`${REPO_URL}/tree/main/tests`} external>Test Suite (286 Passed)</FooterLink>
-                  : <span className="text-[13px] text-zinc-400">Test Suite (224 Passed)</span>}
-              </li>
-              <li><FooterLink href={GITHUB_URL} external>GitHub</FooterLink></li>
-              <li><FooterLink href="https://docs.genlayer.com" external>GenLayer Docs</FooterLink></li>
+              <li><FooterLink href={`${REPO_URL}/tree/main/tests`} external title={TEST_SUITE_DETAIL}>{TEST_SUITE_LABEL}</FooterLink></li>
+              <li><FooterLink href={REPO_URL} external>GitHub</FooterLink></li>
+              <li><FooterLink href={DOCS_URL} external>GenLayer Docs</FooterLink></li>
             </ul>
           </nav>
         </div>

@@ -11,15 +11,15 @@ circuit breaker (and pays the challenger) or slashes the challenger.
 ```
 contracts/argus_gov.py            the contract
 tests/conftest.py                 fixtures, calldata generators, LLM/web mocks, ledger checks
-tests/test_argus_gov.py           286 tests (behaviour, attacks, economics, invariants, regressions)
+tests/test_argus_gov.py           305 tests (behaviour, attacks, economics, invariants, regressions)
 scripts/deploy_and_simulate.py    in-memory attack replay, or live deploy against a network
-frontend/                         Next.js dashboard (270 tests)
+frontend/                         Next.js dashboard (284 tests)
 deployments/                      live Studio Next records (v1 archived, current)
 ```
 
 ```bash
 uv venv --python 3.12 && uv pip install --prerelease=allow -r requirements.txt
-.venv/bin/python -m pytest -q                       # 286 passed
+.venv/bin/python -m pytest -q                       # 305 passed
 .venv/bin/genvm-lint check contracts/argus_gov.py   # 0 errors
 .venv/bin/python scripts/deploy_and_simulate.py     # three attack scenarios, no network
 ```
@@ -323,7 +323,7 @@ connection so DNS cannot change between check and use, redirects re-validated ho
 ports only, and an in-memory sliding-window limit of 10 requests a minute per client. The limiter
 is per server instance; a multi-instance deployment needs a shared store for a global limit.
 
-Frontend tests (Vitest and Testing Library, 270 tests): `cd frontend && npm test`. They cover the
+Frontend tests (Vitest and Testing Library, 284 tests): `cd frontend && npm test`. They cover the
 network-switch prompt, flag-modal gating (no payload inputs, committed list, unacknowledged
 terms, balance below the 2 GEN bond), the commit panel, the write hook's simulating, pending,
 confirming and success states, the proposal status machine, the calldata decoder with native
@@ -338,7 +338,7 @@ calls made from the deploy script, not by a real wallet.
 
 ## 7. Verification
 
-* `pytest`: 286 passed (direct mode, in-memory GenVM). Direct mode runs the leader path, so
+* `pytest`: 305 passed (direct mode, in-memory GenVM). Direct mode runs the leader path, so
   the validator function is exercised separately through `run_validator`; full multi-validator
   consensus is exercised by the live Studio Next run.
 * `genvm-lint check contracts/argus_gov.py`: 0 errors (27 public methods).

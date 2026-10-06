@@ -1,6 +1,7 @@
 "use client";
 
 import { BrainCircuit, CircuitBoard, Coins, Radar } from "lucide-react";
+import { TEST_COUNTS } from "@/lib/project";
 import { useEffect, useState, type ReactNode } from "react";
 
 interface Stage {
@@ -59,7 +60,8 @@ export function AboutSection() {
 
   // The pipeline advances on its own until a visitor hovers or focuses a stage.
   useEffect(() => {
-    if (engaged || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (engaged || reducedMotion) return;
     const id = setInterval(() => setActive((a) => (a + 1) % STAGES.length), 3200);
     return () => clearInterval(id);
   }, [engaged]);
@@ -146,7 +148,7 @@ export function AboutSection() {
       <div id="invariants" className="surface mt-8 scroll-mt-6 p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-zinc-100">Protocol invariants</h3>
-          <span className="font-mono text-[11px] text-zinc-500">enforced in contract, checked by 286 tests</span>
+          <span className="font-mono text-[11px] text-zinc-500">enforced in contract, checked by {TEST_COUNTS.contract} tests</span>
         </div>
         <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           {INVARIANTS.map(([name, text]) => (
