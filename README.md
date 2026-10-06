@@ -185,7 +185,29 @@ call: status, bonds and buckets are untouched.
   (inspection is permissionless, so anyone can retry), and the live-network mode of the deploy
   script has not been exercised against a running network in this repository.
 
-## 6. Verification
+## 6. Live deployment and dashboard
+
+Deployed to **GenLayer Studio Next (chain 61997)**; the record, including per-transaction
+validator votes, is in `deployments/studio-next.json`.
+
+```bash
+python scripts/deploy_and_simulate.py --mode network   # keys from .env.studio (git-ignored)
+cd frontend && cp .env.example .env.local && npm install && npm run dev
+```
+
+`frontend/` is Next.js 14 (App Router, Tailwind, TypeScript) with RainbowKit, wagmi and viem
+on a custom GenLayer chain. Wallets are discovered through EIP-6963 and signing goes through the
+connected wallet's own provider, never `window.ethereum`. Views: monitored DAOs with
+Active/Paused circuit-breaker state, a live proposal inspector (forum intent next to decoded
+calldata, with a discrepancy gauge) that can also run inspection and settlement, and a
+flag modal that posts the exact 2 GEN bond.
+
+Frontend limits: the contract has no DAO or proposal enumeration views, so the dashboard
+probes proposal ids upward and unions the DAOs it finds with `NEXT_PUBLIC_MONITORED_DAOS`.
+Wallet connection and transaction submission have not been exercised in a browser with a
+wallet extension.
+
+## 7. Verification
 
 * `pytest`: 147 passed (direct mode, in-memory GenVM). Direct mode runs the leader path, so
   the validator function is exercised separately through `run_validator`; full multi-validator

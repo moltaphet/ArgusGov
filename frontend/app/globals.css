@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg: #07080c;
+  --glass: rgba(255, 255, 255, 0.055);
+  --glass-strong: rgba(255, 255, 255, 0.09);
+  --edge: rgba(255, 255, 255, 0.11);
+  --text: #f5f5f7;
+  --muted: rgba(235, 235, 245, 0.6);
+  --faint: rgba(235, 235, 245, 0.34);
+  --blue: #0a84ff;
+  --green: #30d158;
+  --amber: #ff9f0a;
+  --red: #ff453a;
+}
+
+html, body { min-height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.011em;
+}
+
+/* Spatial backdrop: soft colour fields behind frosted glass. */
+.backdrop {
+  position: fixed; inset: 0; z-index: -1; overflow: hidden;
+  background:
+    radial-gradient(60vmax 45vmax at 12% -10%, rgba(10, 132, 255, 0.28), transparent 60%),
+    radial-gradient(50vmax 40vmax at 100% 10%, rgba(191, 90, 242, 0.20), transparent 60%),
+    radial-gradient(55vmax 45vmax at 50% 120%, rgba(48, 209, 88, 0.12), transparent 60%),
+    var(--bg);
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.04));
+  border: 1px solid var(--edge);
+  border-radius: 28px;
+  -webkit-backdrop-filter: blur(40px) saturate(1.6);
+  backdrop-filter: blur(40px) saturate(1.6);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 24px 60px -24px rgba(0,0,0,0.7);
+}
+.glass-inner {
+  background: var(--glass);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 18px;
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border-radius: 999px; padding: 10px 18px; font-size: 14px; font-weight: 600;
+  transition: transform .15s ease, background .2s ease, opacity .2s ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary { background: var(--blue); color: #fff; box-shadow: 0 8px 24px -8px rgba(10,132,255,.7); }
+.btn-primary:hover:not(:disabled) { background: #3395ff; }
+.btn-danger { background: var(--red); color: #fff; box-shadow: 0 8px 24px -8px rgba(255,69,58,.6); }
+.btn-ghost { background: var(--glass-strong); color: var(--text); border: 1px solid var(--edge); }
+.btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.14); }
+
+.field {
+  width: 100%; border-radius: 14px; padding: 11px 14px; font-size: 14px; color: var(--text);
+  background: rgba(0,0,0,0.28); border: 1px solid var(--edge); outline: none;
+}
+.field:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,132,255,.25); }
+.field::placeholder { color: var(--faint); }
+
+.label { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+
+.scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 8px; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+.rise { animation: rise .45s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes breathe { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+.breathe { animation: breathe 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rise, .breathe { animation: none; } }

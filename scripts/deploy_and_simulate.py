@@ -8,21 +8,21 @@ Two modes:
            (safe proposal, hidden treasury drain, malicious proxy upgrade with a
            failed appeal) and prints the resulting ledger.
 
-  network  Deploys to a live GenLayer endpoint (localnet / studionet) with
-           genlayer-py and runs the hidden-drain scenario through REAL validator
-           consensus. Needs two funded keys and a forum page you control whose
-           text describes a small marketing grant:
-
-             GUARDIAN_KEY=0x.. CHALLENGER_KEY=0x.. \\
-               python scripts/deploy_and_simulate.py --mode network \\
-               --endpoint http://127.0.0.1:4000/api --forum-url https://example.org/post
+  network  Deploys to GenLayer Studio Next (chain 61997) with genlayer-py and runs the
+           hidden-drain scenario through REAL validator consensus, recording
+           telemetry to deployments/studio-next.json. Keys come from GUARDIAN_KEY /
+           CHALLENGER_KEY (environment or the git-ignored .env.studio). The default
+           forum page (https://example.com) declares no treasury transfer at all, so a
+           9,999,999-token drain is an undisclosed action; point --forum-url at your
+           own page to test a "small marketing grant" description.
 
 Usage:
     python scripts/deploy_and_simulate.py              # direct mode
-    python scripts/deploy_and_simulate.py --mode network --forum-url URL
+    python scripts/deploy_and_simulate.py --mode network [--forum-url URL]
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -162,54 +162,155 @@ def run_direct() -> int:
 # =============================================================================
 # network mode
 # =============================================================================
+STUDIO_NEXT_RPC = "https://studio-next.genlayer.com/api"
+STUDIO_NEXT_EXPLORER = "https://explorer-studio-next.genlayer.com"
+DEPLOYMENT_FILE = ROOT / "deployments" / "studio-next.json"
+ENV_FILE = ROOT / ".env.studio"
+
+
+def _load_keys() -> dict:
+    """GUARDIAN_KEY / CHALLENGER_KEY from the environment, else from the
+    git-ignored .env.studio file. Keys are never printed or recorded."""
+    keys = {}
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text().splitlines():
+            if "=" in line and not line.startswith("#"):
+                name, value = line.split("=", 1)
+                keys[name.strip()] = value.strip()
+    for name in ("GUARDIAN_KEY", "CHALLENGER_KEY"):
+        keys[name] = os.environ.get(name) or keys.get(name, "")
+        if not keys[name]:
+            sys.exit(f"{name} is required (environment or {ENV_FILE.name})")
+    return keys
+
+
+def _receipt_address(receipt) -> str:
+    """Contract address from a deploy receipt (decoded data first, then data)."""
+    for container in (receipt.get("tx_data_decoded"), receipt.get("txDataDecoded"),
+                      receipt.get("data")):
+        if isinstance(container, dict):
+            for key in ("contract_address", "contractAddress"):
+                if container.get(key):
+                    return container[key]
+    return ""
+
+
+def _consensus_proof(receipt) -> dict:
+    """Compact evidence of validator consensus: who voted and how, and the
+    decision the chain accepted. Timing traces and raw blobs are left out."""
+    last = receipt.get("last_round") or {}
+    decision = (receipt.get("consensus_history") or {}).get("latestDecision") or {}
+    return {
+        "result": receipt.get("result_name"),
+        "decision": decision.get("status"),
+        "appeal_deadline": decision.get("appealDeadline"),
+        "initial_validators": receipt.get("num_of_initial_validators"),
+        "round": last.get("round"),
+        "leader_index": last.get("leader_index"),
+        "votes_committed": last.get("votes_committed"),
+        "votes_revealed": last.get("votes_revealed"),
+        "rotations_left": last.get("rotations_left"),
+        "validators": last.get("round_validators"),
+        "votes": last.get("validator_votes_name"),
+        "votes_hash": last.get("validator_votes_hash"),
+    }
+
+
 def run_network(endpoint: str, forum_url: str) -> int:
     from eth_account import Account
     from genlayer_py import create_client
-    from genlayer_py.chains import localnet
+    from genlayer_py.chains import studio_devnet
 
-    for var in ("GUARDIAN_KEY", "CHALLENGER_KEY"):
-        if not os.environ.get(var):
-            sys.exit(f"{var} is required in network mode (a funded private key)")
-    guardian = Account.from_key(os.environ["GUARDIAN_KEY"])
-    challenger = Account.from_key(os.environ["CHALLENGER_KEY"])
-    client = create_client(chain=localnet, endpoint=endpoint, account=guardian)
+    keys = _load_keys()
+    guardian = Account.from_key(keys["GUARDIAN_KEY"])
+    challenger = Account.from_key(keys["CHALLENGER_KEY"])
+    client = create_client(chain=studio_devnet, endpoint=endpoint, account=guardian)
+    chain_id = client.chain.id
+    if chain_id != 61997:
+        sys.exit(f"unexpected chain id {chain_id}; Studio Next is 61997")
 
-    def send(address, fn, args, who, value=0):
-        tx = client.write_contract(address=address, function_name=fn, args=args,
-                                   account=who, value=value)
-        receipt = client.wait_for_transaction_receipt(transaction_hash=tx)
-        print(f"  {fn}: tx {tx[:12]}... status={getattr(receipt, 'status_name', receipt)}")
+    record = {
+        "network": "studio-next",
+        "chain_id": chain_id,
+        "rpc_url": endpoint,
+        "explorer_url": STUDIO_NEXT_EXPLORER,
+        "source": "contracts/argus_gov.py",
+        "source_sha256": hashlib.sha256(CONTRACT.read_bytes()).hexdigest(),
+        "guardian": guardian.address,
+        "challenger": challenger.address,
+        "forum_url": forum_url,
+        "contract_address": "",
+        "transactions": [],
+    }
+
+    def save() -> None:
+        DEPLOYMENT_FILE.parent.mkdir(exist_ok=True)
+        DEPLOYMENT_FILE.write_text(json.dumps(record, indent=2, default=str) + "\n")
+
+    def settle(label: str, tx_hash: str) -> dict:
+        receipt = client.wait_for_transaction_receipt(
+            transaction_hash=tx_hash, wait_until="decided", retries=200, interval=3000,
+            full_transaction=True)
+        entry = {"label": label, "tx_hash": tx_hash,
+                 "explorer_url": f"{STUDIO_NEXT_EXPLORER}/transactions/{tx_hash}",
+                 "consensus": _consensus_proof(receipt)}
+        record["transactions"].append(entry)
+        save()
+        print(f"  {label}: {tx_hash}  status={receipt.get('status_name')} "
+              f"result={receipt.get('result_name')}")
         return receipt
 
-    print("Deploying ArgusGov...")
-    tx = client.deploy_contract(code=CONTRACT.read_bytes(), account=guardian, args=[])
-    receipt = client.wait_for_transaction_receipt(transaction_hash=tx)
-    address = (receipt.get("data") or {}).get("contract_address")
-    if not address:
-        sys.exit(f"deployment did not return a contract address: {receipt}")
-    print(f"  deployed at {address}")
+    def send(label, fn, args, who, value=0):
+        fees = client.estimate_transaction_fees()
+        tx = client.write_contract(address=record["contract_address"], function_name=fn,
+                                   args=args, account=who, value=value, fees=fees)
+        return settle(label, tx)
 
-    send(address, "register_dao", [TIMELOCK], guardian, POOL)
-    send(address, "flag_proposal",
+    def read(fn, args):
+        return client.read_contract(address=record["contract_address"], function_name=fn,
+                                    args=args)
+
+    print(f"Deploying ArgusGov to Studio Next (chain {chain_id}) as {guardian.address}")
+    fees = client.estimate_transaction_fees()
+    tx = client.deploy_contract(code=CONTRACT.read_bytes(), account=guardian, args=[], fees=fees)
+    receipt = settle("deploy", tx)
+    address = _receipt_address(receipt)
+    if not address:
+        sys.exit("deployment receipt carried no contract address")
+    record["contract_address"] = address
+    record["address_explorer_url"] = f"{STUDIO_NEXT_EXPLORER}/address/{address}"
+    save()
+    print(f"  contract: {address}")
+
+    send("register_dao", "register_dao", [TIMELOCK], guardian, POOL)
+    send("flag_proposal", "flag_proposal",
          [TIMELOCK, 1, forum_url, [TOKEN], [transfer_calldata(ATTACKER, 9_999_999 * ATTO)]],
          challenger, BOND)
-    send(address, "inspect_proposal", [1], challenger)
-    send(address, "execute_circuit_breaker", [1], challenger)
-    print(json.dumps(client.read_contract(address=address, function_name="get_proposal",
-                                          args=[1]), indent=2, default=str))
+    send("inspect_proposal", "inspect_proposal", [1], challenger)
+    proposal = read("get_proposal", [1])
+    print(f"  consensus verdict: status={proposal['status']} score={proposal['threat_score']}")
+    if proposal["status"] == "ANALYZING":
+        send("execute_circuit_breaker", "execute_circuit_breaker", [1], challenger)
+        proposal = read("get_proposal", [1])
+    record["final_proposal"] = proposal
+    record["ledger"] = read("get_ledger", [])
+    record["execution_frozen"] = read("is_execution_frozen", [TIMELOCK, 1])
+    record["solvent"] = read("solvency", [])
+    save()
+    print(f"  final status: {proposal['status']}  frozen={record['execution_frozen']}")
+    print(f"  telemetry saved to {DEPLOYMENT_FILE.relative_to(ROOT)}")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deploy ArgusGov and replay attack scenarios")
     parser.add_argument("--mode", choices=["direct", "network"], default="direct")
-    parser.add_argument("--endpoint", default="http://127.0.0.1:4000/api")
-    parser.add_argument("--forum-url", help="forum page describing a small marketing grant")
+    parser.add_argument("--endpoint", default=STUDIO_NEXT_RPC)
+    parser.add_argument("--forum-url", default="https://example.com",
+                        help="page validators read as the declared intent")
     args = parser.parse_args()
     if args.mode == "direct":
         return run_direct()
-    if not args.forum_url:
-        sys.exit("--forum-url is required in network mode")
     return run_network(args.endpoint, args.forum_url)
 
 
