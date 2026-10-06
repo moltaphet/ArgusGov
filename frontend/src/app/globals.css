@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+html, body { min-height: 100%; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background-color: #090A0F;
+  color: theme("colors.zinc.200");
+  font-family: theme("fontFamily.sans");
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01", "tnum";
+}
+
+/* Ambient mesh: faint indigo and emerald light over a fine dot grid. */
+.ambient {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(64rem 38rem at 12% -10%, rgba(99, 102, 241, 0.045), transparent 62%),
+    radial-gradient(56rem 34rem at 96% 4%, rgba(71, 85, 105, 0.12), transparent 62%),
+    radial-gradient(52rem 32rem at 88% 108%, rgba(16, 185, 129, 0.03), transparent 62%),
+    radial-gradient(60rem 30rem at 4% 100%, rgba(99, 102, 241, 0.04), transparent 62%),
+    #090A0F;
+}
+/* Tactical dot grid, fading out toward the lower page. */
+.ambient::before {
+  content: ""; position: absolute; inset: 0; opacity: 0.1;
+  background-image: radial-gradient(rgba(228, 228, 231, 0.9) 1px, transparent 1.2px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(ellipse 85% 70% at 50% 18%, #000 25%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 70% at 50% 18%, #000 25%, transparent 78%);
+}
+/* Fine graph lines, even fainter, for depth behind the dots. */
+.ambient::after {
+  content: ""; position: absolute; inset: 0; opacity: 0.35;
+  background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 104px 104px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, #000 20%, transparent 75%);
+}
+
+@layer components {
+  .surface {
+    @apply rounded-2xl border border-white/[0.08] bg-zinc-900/50 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)];
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.09), inset 0 0 0 1px rgba(255,255,255,0.015), 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .surface-inset { @apply rounded-xl border border-white/[0.06] bg-black/25; }
+  .eyebrow { @apply text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500; }
+  .figure { @apply font-mono tabular-nums text-zinc-100; }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium transition
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-glass { @apply border border-white/10 bg-white/[0.04] text-zinc-200 backdrop-blur-xl hover:bg-white/[0.08] hover:border-white/20; }
+  .btn-outline-rose { @apply border border-rose-500/50 bg-rose-500/[0.06] text-rose-200 hover:bg-rose-500/[0.14] hover:border-rose-400/80 shadow-[0_0_24px_-8px_rgba(244,63,94,0.5)]; }
+  .btn-solid-rose { @apply border border-rose-400/60 bg-rose-500/90 text-white hover:bg-rose-500 shadow-[0_0_28px_-6px_rgba(244,63,94,0.6)]; }
+  .btn-quiet { @apply text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06]; }
+
+  .field {
+    @apply w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none transition
+           focus:border-indigo-400/60 focus:ring-4 focus:ring-indigo-400/15;
+  }
+  .field[aria-invalid="true"] { @apply border-rose-500/60 focus:border-rose-400 focus:ring-rose-400/15; }
+
+  .badge { @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium; }
+  .badge-safe { @apply border-emerald-500/25 bg-emerald-500/10 text-emerald-300; }
+  .badge-warn { @apply border-amber-500/25 bg-amber-500/10 text-amber-300; }
+  .badge-crit { @apply border-rose-500/30 bg-rose-500/10 text-rose-300; }
+  .badge-mute { @apply border-white/10 bg-white/[0.04] text-zinc-400; }
+}
+
+.scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 8px; }
+.scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
+
+dialog::backdrop { background: rgba(5, 6, 10, 0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+.flow-x { background-image: linear-gradient(90deg, transparent 0%, rgba(165,180,252,.95) 50%, transparent 100%); background-size: 200% 100%; }
+.flow-y { background-image: linear-gradient(180deg, transparent 0%, rgba(165,180,252,.95) 50%, transparent 100%); background-size: 100% 200%; }
+.scanlines {
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.028) 0 1px, transparent 1px 3px),
+    linear-gradient(rgba(34,211,238,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,.035) 1px, transparent 1px);
+  background-size: auto, 24px 24px, 24px 24px;
+}
+
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise, .animate-pulseRing, .animate-slideIn, .animate-glow, .animate-spin, .animate-radar, .animate-gaugeRadar, .animate-flowX, .animate-flowY, .animate-spinSlow { animation: none !important; }
+}

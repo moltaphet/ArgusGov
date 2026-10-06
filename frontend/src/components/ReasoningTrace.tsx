@@ -1,0 +1,52 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { BadgeCheck, ChevronDown, Quote } from "lucide-react";
+import { useEffect, useState } from "react";
+import { loadConsensus } from "@/lib/consensus";
+import { EXPLORER_URL } from "@/lib/networks";
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The leader validator's verdict, read from the consensus receipt and checked against the on-chain commitment. */
+export function ReasoningTrace({ hash, onchainHash }: { hash: string | undefined; onchainHash: string }) {
+  const q = useQuery({ queryKey: ["consensus", hash], enabled: Boolean(hash), queryFn: () => loadConsensus(hash!), staleTime: 5 * 60_000 });
+  const reasoning = q.data?.reasoning;
+  const [match, setMatch] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    setMatch(null);
+    if (reasoning && onchainHash) sha256Hex(reasoning).then((h) => live && setMatch(h === onchainHash)).catch(() => undefined);
+    return () => { live = false; };
+  }, [reasoning, onchainHash]);
+
+  return (
+    <details open className="surface-inset group">
+      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
+        <span className="flex items-center gap-2 text-xs font-medium text-zinc-300"><Quote size={14} className="text-zinc-500" /> Validator reasoning trace</span>
+        <span className="flex items-center gap-3">
+          {match === true && <span className="badge badge-safe"><BadgeCheck size={12} /> Matches on-chain hash</span>}
+          {match === false && <span className="badge badge-warn">Hash differs from on-chain commitment</span>}
+          <ChevronDown size={15} className="text-zinc-500 transition group-open:rotate-180" />
+        </span>
+      </summary>
+      <div className="border-t border-white/[0.06] px-4 py-4">
+        {!hash && <p className="text-xs leading-relaxed text-zinc-500">No consensus receipt is linked to this proposal in this browser. Only the reasoning hash is stored on-chain{onchainHash ? ` (${onchainHash.slice(0, 12)}…)` : ""}; run the inspection from this dashboard to attach its receipt.</p>}
+        {hash && q.isLoading && <div className="space-y-2" aria-busy><div className="h-3 w-full animate-pulse rounded bg-white/[0.06]" /><div className="h-3 w-5/6 animate-pulse rounded bg-white/[0.06]" /></div>}
+        {hash && q.isError && <p className="text-xs text-amber-300">The consensus receipt could not be loaded from Studio Next.</p>}
+        {reasoning && (
+          <blockquote className="border-l-2 border-indigo-400/40 pl-4 text-[13px] leading-relaxed text-zinc-300">
+            {reasoning}
+            <footer className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-zinc-600">
+              <span>leader verdict · score {q.data?.score}</span>
+              <a className="text-indigo-300/80 hover:underline" href={`${EXPLORER_URL}/transactions/${hash}`} target="_blank" rel="noreferrer">view consensus receipt</a>
+            </footer>
+          </blockquote>
+        )}
+      </div>
+    </details>
+  );
+}

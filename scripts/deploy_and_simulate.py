@@ -247,11 +247,11 @@ def run_network(endpoint: str, forum_url: str) -> int:
         DEPLOYMENT_FILE.parent.mkdir(exist_ok=True)
         DEPLOYMENT_FILE.write_text(json.dumps(record, indent=2, default=str) + "\n")
 
-    def settle(label: str, tx_hash: str) -> dict:
+    def settle(label: str, tx_hash: str, proposal_id: int = 0) -> dict:
         receipt = client.wait_for_transaction_receipt(
             transaction_hash=tx_hash, wait_until="decided", retries=200, interval=3000,
             full_transaction=True)
-        entry = {"label": label, "tx_hash": tx_hash,
+        entry = {"label": label, "tx_hash": tx_hash, "proposal_id": proposal_id or None,
                  "explorer_url": f"{STUDIO_NEXT_EXPLORER}/transactions/{tx_hash}",
                  "consensus": _consensus_proof(receipt)}
         record["transactions"].append(entry)
@@ -260,11 +260,11 @@ def run_network(endpoint: str, forum_url: str) -> int:
               f"result={receipt.get('result_name')}")
         return receipt
 
-    def send(label, fn, args, who, value=0):
+    def send(label, fn, args, who, value=0, proposal_id=0):
         fees = client.estimate_transaction_fees()
         tx = client.write_contract(address=record["contract_address"], function_name=fn,
                                    args=args, account=who, value=value, fees=fees)
-        return settle(label, tx)
+        return settle(label, tx, proposal_id)
 
     def read(fn, args):
         return client.read_contract(address=record["contract_address"], function_name=fn,
@@ -285,12 +285,12 @@ def run_network(endpoint: str, forum_url: str) -> int:
     send("register_dao", "register_dao", [TIMELOCK], guardian, POOL)
     send("flag_proposal", "flag_proposal",
          [TIMELOCK, 1, forum_url, [TOKEN], [transfer_calldata(ATTACKER, 9_999_999 * ATTO)]],
-         challenger, BOND)
-    send("inspect_proposal", "inspect_proposal", [1], challenger)
+         challenger, BOND, proposal_id=1)
+    send("inspect_proposal", "inspect_proposal", [1], challenger, proposal_id=1)
     proposal = read("get_proposal", [1])
     print(f"  consensus verdict: status={proposal['status']} score={proposal['threat_score']}")
     if proposal["status"] == "ANALYZING":
-        send("execute_circuit_breaker", "execute_circuit_breaker", [1], challenger)
+        send("execute_circuit_breaker", "execute_circuit_breaker", [1], challenger, proposal_id=1)
         proposal = read("get_proposal", [1])
     record["final_proposal"] = proposal
     record["ledger"] = read("get_ledger", [])

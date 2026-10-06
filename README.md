@@ -202,6 +202,11 @@ Active/Paused circuit-breaker state, a live proposal inspector (forum intent nex
 calldata, with a discrepancy gauge) that can also run inspection and settlement, and a
 flag modal that posts the exact 2 GEN bond.
 
+Frontend tests (Vitest and Testing Library, 44 tests): `cd frontend && npm test`. They cover the
+network-switch prompt, flag-modal gating (empty fields, unacknowledged terms, balance below the
+2 GEN bond), the write hook's simulating, pending, confirming and success states, the proposal
+status machine, the calldata decoder, and the revert-message decoder.
+
 Frontend limits: the contract has no DAO or proposal enumeration views, so the dashboard
 probes proposal ids upward and unions the DAOs it finds with `NEXT_PUBLIC_MONITORED_DAOS`.
 Wallet connection and transaction submission have not been exercised in a browser with a
