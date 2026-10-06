@@ -1,0 +1,13 @@
+[project]
+name = "argusgov"
+version = "0.1.0"
+description = "ArgusGov - DAO governance sentinel and intelligent circuit breaker (GenVM)"
+requires-python = ">=3.12"
+dependencies = [
+    "genlayer-test==0.30.0rc2",
+    "genlayer-py==0.19.0rc2",
+    "pytest==9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
