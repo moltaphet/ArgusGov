@@ -32,7 +32,8 @@ export function committedProposal(over: Partial<CommittedProposal> = {}): Commit
   return {
     daoKey: DAO_KEY, daoAddress: DAO, chainId: CHAIN, daoProposalId: 42, forumUrl: FORUM, targets: [TOKEN], values: [0n],
     calldatas: [transferCalldata(EVIL, 9_999_999n * GEN)], payloadHash: PAYLOAD_HASH, committedBy: WALLET, committedAt: 1000,
-    flagId: 0, reflagCount: 0, flagStatus: "", flaggable: true, requiredBond: 2n * GEN, frozen: false, ...over,
+    flagId: 0, reflagCount: 0, flagStatus: "", flaggable: true, requiredBond: 2n * GEN, frozen: false,
+    provenance: { status: "UNVERIFIED", governor: "", descriptionHash: "", binding: "", attestedAt: 0 }, ...over,
   };
 }
 

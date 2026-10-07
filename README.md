@@ -10,16 +10,19 @@ circuit breaker (and pays the challenger) or slashes the challenger.
 
 ```
 contracts/argus_gov.py            the contract
+contracts/enforcement/            ArgusGuardedTimelock.sol reference adapter, ArgusGovMirror.sol, Python model, forge tests
 tests/conftest.py                 fixtures, calldata generators, LLM/web mocks, ledger checks
-tests/test_argus_gov.py           305 tests (behaviour, attacks, economics, invariants, regressions)
+tests/test_argus_gov.py           core suite: behaviour, attacks, economics, invariants, regressions
+tests/test_provenance_enforcement.py  provenance derivation/tamper/orphan checks and end-to-end enforcement
+tests/                            341 tests (behaviour, attacks, economics, invariants, provenance, enforcement)
 scripts/deploy_and_simulate.py    in-memory attack replay, or live deploy against a network
-frontend/                         Next.js dashboard (284 tests)
+frontend/                         Next.js dashboard (305 tests)
 deployments/                      live Studio Next records (v1 archived, current)
 ```
 
 ```bash
 uv venv --python 3.12 && uv pip install --prerelease=allow -r requirements.txt
-.venv/bin/python -m pytest -q                       # 305 passed
+.venv/bin/python -m pytest -q                       # 341 passed
 .venv/bin/genvm-lint check contracts/argus_gov.py   # 0 errors
 .venv/bin/python scripts/deploy_and_simulate.py     # three attack scenarios, no network
 ```
@@ -62,6 +65,9 @@ is two DAOs.
 | `withdraw_pool(dao_key, amount)` | guardian | withdraws idle pool funds; bounties reserved for open flags stay locked |
 | `claim_payout()` | anyone with a balance | the only way value leaves the contract |
 | `is_execution_frozen(dao_key, proposal_id, expected_payload_hash)` view | a DAO's execution guard | true only if the proposal is committed, frozen, **and** `expected_payload_hash` equals the committed hash byte for byte |
+| `attest_provenance(dao_key, proposal_id, governor, description_hash)` | anyone | proves the proposal came from a real Governor: canonical id derivation, then validator consensus over origin-chain RPC; sets `VERIFIED` or `ORPHAN` |
+| `get_execution_gate(dao_key, proposal_id, expected_payload_hash)` / `is_execution_blocked(...)` view | a DAO's execution guard | `blocked` is true while a verdict freezes the proposal **or** a dispute is still being inspected |
+| `get_provenance(dao_key, proposal_id)` view | anyone | origin chain, Governor, `description_hash` and the binding hash |
 | `get_proposal_verdict(dao_key, proposal_id)` view | anyone | score, `is_malicious` and the **full reasoning text** |
 | `get_committed_*`, `get_dao_*` views | anyone | enumerate commitments and registered DAOs; a commitment reports `flaggable`, `required_bond`, `reflag_count` and `flag_status` |
 
@@ -294,15 +300,98 @@ what the DAO committed.
   natively; a maximum-size payload of 10 actions at 4 KB each is roughly 300 blocks, about 85 ms natively). It executed fine on Studio Next, but it
   has not been profiled against GenVM's compute limits at the maximum payload size.
 
-## 6. Live deployment and dashboard
+## 6. Protocol Hardening: Proposal Provenance & Execution Enforcement
+
+A hackathon steward's review found two gaps: *"The absent proposal-provenance and
+execution-enforcement layer should be improved."* Both are closed here.
+
+```mermaid
+flowchart LR
+    A["DAO Timelock / Governor<br/>(origin chain)"] -->|"proposal id =<br/>keccak256(abi.encode(targets, values,<br/>calldatas, descriptionHash))"| B["Provenance Verification<br/>commit_proposal + attest_provenance<br/>(RPC consensus)"]
+    B -->|"VERIFIED / ORPHAN"| C["GenVM Multi-Validator<br/>LLM Consensus<br/>inspect_proposal"]
+    C -->|"score >= 75: frozen<br/>open dispute: blocked"| D["Execution-Enforcement Hook<br/>ArgusGuardedTimelock.execute()<br/>REVERTS"]
+    D -.->|"is_execution_frozen / is_dispute_open"| C
+```
+
+```
+ DAO Timelock / Governor ──► Provenance Verification ──► GenVM Multi-Validator ──► Execution-Enforcement Hook
+ (origin chain)              (ArgusGov ingestion)        LLM Consensus              (Timelock revert)
+  proposalId = keccak256     id derivation + RPC          score >= 75 -> frozen      require(!isFrozen && !disputeOpen)
+  (abi.encode(targets,       consensus: Governor knows    open flag -> blocked       "ArgusGov: Execution frozen
+   values, calldatas,        the id AND holds                                         by circuit breaker"
+   descriptionHash))         PROPOSER_ROLE
+```
+
+### Proposal provenance
+
+`attest_provenance(dao_key, proposal_id, governor, description_hash)` is permissionless, because
+every check is objective:
+
+1. **Canonical derivation (deterministic).** The committed `proposal_id` must equal the
+   OpenZeppelin `Governor.hashProposal`: `keccak256(abi.encode(targets, values, calldatas,
+   descriptionHash))`. A tampered target, value, calldata or description hash derives a
+   different id and the call reverts with `provenance mismatch`.
+2. **Origin check (validator consensus).** Validators send one JSON-RPC batch to a trusted
+   endpoint for the origin chain (callers cannot choose the endpoint) and must agree exactly on two
+   facts: `Governor.proposalSnapshot(id) != 0` (the Governor knows the proposal) and
+   `Timelock.hasRole(PROPOSER_ROLE, governor)` (the Governor is authorised on the DAO's timelock,
+   so a look-alike contract cannot vouch for a forged proposal).
+   `proposalSnapshot` is used instead of `state(id) != 0` because `Pending` is state `0` in
+   OpenZeppelin, so `state()` cannot tell a pending proposal from nothing.
+3. **Binding.** `binding = keccak256(abi.encode(chainId, governor, proposalId, payloadHash,
+   descriptionHash))` ties the committed payload and forum-URL hash to the Governor and chain.
+
+A proposal the origin chain does not know is marked `ORPHAN` and **cannot be flagged**. An RPC
+outage raises `[TRANSIENT]` and changes nothing, so an outage never reads as an orphan. Provenance is
+opt-in per proposal: a commitment stays `UNVERIFIED` (and flaggable) until attested, and the
+dashboard shows which. Supported origin chains: Ethereum, Optimism, Polygon, Base, Arbitrum and Sepolia
+(`PROVENANCE_RPC`); the proposal must come from an OpenZeppelin Governor on a `TimelockController`.
+
+### Execution enforcement
+
+`is_execution_frozen` alone is a flag; enforcement needs a timelock that obeys it. The reference
+adapter `contracts/enforcement/ArgusGuardedTimelock.sol` calls ArgusGov immediately before it runs a queued proposal:
+
+```solidity
+require(!argusGov.is_execution_frozen(proposalHash), "ArgusGov: Execution frozen by circuit breaker");
+require(!argusGov.is_dispute_open(proposalHash),     "ArgusGov: Dispute inspection in progress");
+```
+
+* **Dispute buffer.** Execution is allowed no earlier than `eta + disputeBuffer`, so a challenge raised at
+  the last minute is relayed before the proposal can run, and it is blocked for as long as validators are
+  still inspecting (`REGISTERED`, `ANALYZING`, `CHALLENGED_PAUSED`). `get_execution_gate` reports both.
+* **Emergency hook.** `emergencyFreeze(hash)` (guardian) blocks at once without waiting for a verdict;
+  `emergencyUnfreeze` refuses while ArgusGov holds a freeze or open dispute, so the guardian cannot
+  override the circuit breaker.
+* **Hash-bound.** Every positive answer requires the caller's payload hash to equal the committed one,
+  so a forged commitment cannot block a genuine proposal.
+* **Bridge assumption.** ArgusGov runs on GenLayer and the timelock on the DAO's chain.
+  `ArgusGovMirror.sol` is the EVM-side read model that the GenLayer bridge relayer writes; the adapter
+  trusts that relay. The mirror is a reference, not a deployed bridge.
+
+**End-to-end simulation.** `tests/test_provenance_enforcement.py` drives the real contract in direct mode
+through `contracts/enforcement/argus_guarded_timelock.py` (a line-for-line model of the Solidity adapter):
+a matured malicious payload is queued, a challenger flags it, validators score it 95, and `execute` reverts;
+it also reverts while the dispute is merely open, and a benign proposal executes once cleared. The Solidity
+adapter has its own `forge test` suite (5 tests, not part of the pytest count).
+
+The dashboard shows a **Provenance Status** badge (`VERIFIED ON-CHAIN ORIGIN` with Governor, chain ID and
+`descriptionHash`) and an **Execution Enforcement** panel (`ARMED & GUARDED` / `EXECUTION INTERCEPTED
+(REVERTED)`) whose *Simulate Timelock Execution* button dry-runs the adapter against ArgusGov's live state.
+The simulation sends no transaction, and the deployed Studio Next contract predates these methods until it is redeployed.
+
+## 7. Live deployment and dashboard
 
 Deployed to **GenLayer Studio Next (chain 61997)**; the record, including per-transaction
 validator votes, is in `deployments/studio-next.json` (the first, pre-commitment deployment is
 archived in `studio-next.v1.json`). The live run registers a DAO, commits a proposal, **proves an
 uncommitted flag is rejected on-chain**, flags, inspects and settles through real validator
 consensus, then checks the hash-bound freeze: **true for the committed hash, false for any other**.
-The contract is at `0x3f53bAA9468670798dcf8985fF29d52116f8E1A0`; earlier deployments are archived as
-`studio-next.v1.json` and `studio-next.v2.json`.
+The contract is at `0x1505D06B999Dd1637698bE93AEa26B9948B5F0aa`; earlier deployments are archived as
+`studio-next.v1.json` to `studio-next.v5.json`. The upgraded contract with provenance and the execution gate was verified live by
+`scripts/verify_live.py` and `scripts/verify_live_hardening.py` (reports in `deployments/live-verification*.json`):
+a tampered description hash reverts on-chain with `provenance mismatch`, and the settled proposal reports `blocked` from `get_execution_gate`.
+Studio Next has no trusted origin-chain RPC, so a full `VERIFIED` attestation is covered by the mocked-RPC tests only.
 
 ```bash
 python scripts/deploy_and_simulate.py --mode network   # keys from .env.studio (git-ignored)
@@ -325,7 +414,7 @@ connection so DNS cannot change between check and use, redirects re-validated ho
 ports only, and an in-memory sliding-window limit of 10 requests a minute per client. The limiter
 is per server instance; a multi-instance deployment needs a shared store for a global limit.
 
-Frontend tests (Vitest and Testing Library, 284 tests): `cd frontend && npm test`. They cover the
+Frontend tests (Vitest and Testing Library, 305 tests): `cd frontend && npm test`. They cover the
 network-switch prompt, flag-modal gating (no payload inputs, committed list, unacknowledged
 terms, balance below the 2 GEN bond), the commit panel, the write hook's simulating, pending,
 confirming and success states, the proposal status machine, the calldata decoder with native
@@ -338,10 +427,11 @@ record counter view). Wallet connection and transaction submission have not been
 browser with a wallet extension, so the write path is covered by unit tests and by the contract
 calls made from the deploy script, not by a real wallet.
 
-## 7. Verification
+## 8. Verification
 
-* `pytest`: 305 passed (direct mode, in-memory GenVM). Direct mode runs the leader path, so
+* `pytest`: 341 passed (direct mode, in-memory GenVM). Direct mode runs the leader path, so
   the validator function is exercised separately through `run_validator`; full multi-validator
   consensus is exercised by the live Studio Next run.
-* `genvm-lint check contracts/argus_gov.py`: 0 errors (27 public methods).
+* `genvm-lint check contracts/argus_gov.py`: 0 errors (31 public methods).
+* `forge test` (from the repo root): 5 passed, the Solidity guarded-timelock adapter.
 * `cd frontend && npm run typecheck && npm run lint && npm test && npm run build`: all pass.

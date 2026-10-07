@@ -5,7 +5,7 @@ import { readView } from "./genlayer";
 import { MONITORED_DAOS } from "./networks";
 import { toBig } from "./format";
 import { payloadHashToBytes } from "./payloadHash";
-import type { CommittedProposal, DaoSummary, Ledger, Proposal, ProposalStatus, SecurityPool } from "./types";
+import type { CommittedProposal, DaoSummary, Ledger, Proposal, ProposalStatus, ProvenanceStatus, SecurityPool } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const daoAddressOf = (daoKey: string): string => daoKey.slice(daoKey.indexOf(":") + 1);
@@ -58,6 +58,14 @@ export function toCommitted(raw: any): CommittedProposal {
     flaggable: Boolean(raw.flaggable),
     requiredBond: toBig(raw.required_bond),
     frozen: Boolean(raw.frozen),
+    // Older deployments predate provenance: treat their commitments as unattested.
+    provenance: {
+      status: (["VERIFIED", "ORPHAN"].includes(String(raw.provenance_status)) ? raw.provenance_status : "UNVERIFIED") as ProvenanceStatus,
+      governor: String(raw.governor ?? ""),
+      descriptionHash: String(raw.description_hash ?? ""),
+      binding: String(raw.provenance_binding ?? ""),
+      attestedAt: Number(raw.provenance_at ?? 0),
+    },
   };
 }
 

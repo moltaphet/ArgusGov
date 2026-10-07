@@ -11,6 +11,7 @@ import { useExecuteCircuitBreaker, useInspectProposal } from "@/hooks/useInspect
 import { decodeActions } from "@/lib/decode";
 import { availableActions, type ActionId } from "@/lib/lifecycle";
 import { readView } from "@/lib/genlayer";
+import { useCommitted } from "@/lib/queries";
 import { countdown, formatGen, shortAddress, timeAgo } from "@/lib/format";
 import { inspectHashFor, loadConsensus } from "@/lib/consensus";
 import { EXPLORER_URL, PROTOCOL } from "@/lib/networks";
@@ -18,6 +19,8 @@ import type { Proposal } from "@/lib/types";
 import { CalldataTerminal, DeclaredIntentCard } from "./AuditDiff";
 import { CopyButton } from "./CopyButton";
 import { Identicon } from "./Identicon";
+import { ExecutionEnforcementPanel } from "./ExecutionEnforcementPanel";
+import { ProvenanceBadge } from "./ProvenanceBadge";
 import { ReasoningTrace } from "./ReasoningTrace";
 import { Spinner } from "./Spinner";
 import { StatusBadge } from "./StatusBadge";
@@ -79,6 +82,7 @@ function Detail({ p }: { p: Proposal }) {
   const now = Date.now() / 1000;
   const { address } = useAccount();
   const pool = useQuery({ queryKey: ["daos", "pool", p.daoKey], staleTime: 30_000, queryFn: () => readView<{ guardian?: string }>("get_security_pool", [p.daoKey]) });
+  const committed = useCommitted().data?.find((c) => c.daoKey.toLowerCase() === p.daoKey.toLowerCase() && c.daoProposalId === p.daoProposalId);
   const inspect = useInspectProposal();
   const settle = useExecuteCircuitBreaker();
   const appeal = useAppealFlag();
@@ -139,6 +143,8 @@ function Detail({ p }: { p: Proposal }) {
         </div>
       </div>
 
+      <ProvenanceBadge committed={committed} />
+
       {/* Gauge + verdict facts */}
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
         <div className="relative">
@@ -167,6 +173,8 @@ function Detail({ p }: { p: Proposal }) {
       </div>
 
       <ReasoningTrace hash={inspectHash} onchainHash={p.reasoningHash} daoKey={p.daoKey} daoProposalId={p.daoProposalId} scored={scored} />
+
+      <ExecutionEnforcementPanel proposal={p} />
 
       <div className="flex flex-wrap items-start gap-2.5">
         {actionList.map((a) => (

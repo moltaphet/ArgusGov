@@ -1,47 +1,47 @@
 {
-  "contract_address": "0x3f53bAA9468670798dcf8985fF29d52116f8E1A0",
+  "contract_address": "0x1505D06B999Dd1637698bE93AEa26B9948B5F0aa",
   "dao_key": "61997:0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
   "proposal_id": 2,
   "steps": [
     {
       "label": "a_commit_proposal",
-      "tx_hash": "0xe97b8ef06c578577fec2cdbb7193aa35e5dbcd15cde2a5cd0f2e970392fd7729",
+      "tx_hash": "0x81ee2a2cd045f1854cf73829c82c4ba50ccf8c071014be5e68d48b6051df36e7",
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xe97b8ef06c578577fec2cdbb7193aa35e5dbcd15cde2a5cd0f2e970392fd7729"
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x81ee2a2cd045f1854cf73829c82c4ba50ccf8c071014be5e68d48b6051df36e7"
     },
     {
       "label": "b_flag_proposal",
-      "tx_hash": "0xba0cadb6414a3d89d6ea2a2321dc8f587343e0c4df3a9e770e53bf382c682446",
+      "tx_hash": "0xcc9c3b2a0127c04212c721ca446316f4c3b91c723c3ea770f92bc9bfa0412860",
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xba0cadb6414a3d89d6ea2a2321dc8f587343e0c4df3a9e770e53bf382c682446"
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xcc9c3b2a0127c04212c721ca446316f4c3b91c723c3ea770f92bc9bfa0412860"
     },
     {
       "label": "c_inspect_by_non_challenger",
-      "tx_hash": "0xcf4f9129d280a8d2e568c3ab2d4db564439080969ea550b18b16a748824d6891",
+      "tx_hash": "0xfe5779b6959083a15ac740c07037e3dd9834a29de4f26cecda0355b7da0dd921",
       "execution": "FINISHED_WITH_ERROR",
       "revert_message": "[EXPECTED] inspection is reserved for the challenger during the first 30 minutes",
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xcf4f9129d280a8d2e568c3ab2d4db564439080969ea550b18b16a748824d6891"
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xfe5779b6959083a15ac740c07037e3dd9834a29de4f26cecda0355b7da0dd921"
     },
     {
       "label": "d_inspect_by_challenger",
-      "tx_hash": "0x1aa5c147c7f3f526584b8902a40e6950a488dbde1e288de7387f85065c139844",
+      "tx_hash": "0x7e1228fc1d0a126a083ee473ba3e28e1380e3d3ea57fe3392b20ec37a747e0b0",
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x1aa5c147c7f3f526584b8902a40e6950a488dbde1e288de7387f85065c139844"
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x7e1228fc1d0a126a083ee473ba3e28e1380e3d3ea57fe3392b20ec37a747e0b0"
     },
     {
       "label": "e_execute_circuit_breaker",
-      "tx_hash": "0x7ea7dbbdbfaa06e31ee03e16f027202ce58d4327968522bb04bca7a2e08d48df",
+      "tx_hash": "0xce2b419c27dcbba7cf9bbcf2c1a00f9ff4e2cf08c930efea6ab13c839558e384",
       "execution": "FINISHED_WITH_RETURN",
       "revert_message": null,
-      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0x7ea7dbbdbfaa06e31ee03e16f027202ce58d4327968522bb04bca7a2e08d48df"
+      "explorer_url": "https://explorer-studio-next.genlayer.com/transactions/0xce2b419c27dcbba7cf9bbcf2c1a00f9ff4e2cf08c930efea6ab13c839558e384"
     }
   ],
-  "ran_at": "2026-10-06T17:51:05.163318+00:00",
+  "ran_at": "2026-10-07T07:49:18.581754+00:00",
   "passed": true,
   "final_status": "FLAGGED_MALICIOUS",
-  "threat_score": 92,
-  "reasoning_chars": 546
+  "threat_score": 96,
+  "reasoning_chars": 638
 }

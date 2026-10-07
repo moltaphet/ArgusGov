@@ -59,6 +59,22 @@ export interface CommittedProposal {
   /** Bond the next challenge must post, in wei: the base bond, or double after a SAFE verdict. 0 when not flaggable. */
   requiredBond: bigint;
   frozen: boolean;
+  /** Where the proposal came from; UNVERIFIED until someone runs attest_provenance. */
+  provenance: Provenance;
+}
+
+export type ProvenanceStatus = "UNVERIFIED" | "VERIFIED" | "ORPHAN";
+
+/** Origin-chain proof for a committed proposal (empty strings until attested). */
+export interface Provenance {
+  status: ProvenanceStatus;
+  /** Governor on the origin chain that created the proposal. */
+  governor: string;
+  /** keccak256(description) the Governor id was derived with. */
+  descriptionHash: string;
+  /** keccak256(chainId, governor, proposalId, payloadHash, descriptionHash). */
+  binding: string;
+  attestedAt: number;
 }
 
 export interface SecurityPool {

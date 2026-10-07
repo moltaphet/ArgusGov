@@ -73,7 +73,7 @@ describe("footer", () => {
     renderFooter();
     const link = screen.getByRole("link", { name: new RegExp(shortAddress(ARGUS_ADDRESS, 10, 4)) });
     expect(link).toHaveAttribute("href", `${EXPLORER_URL}/address/${ARGUS_ADDRESS}`);
-    expect(link.getAttribute("href")).toContain("explorer-studio-next.genlayer.com/address/0x3f53bAA9");
+    expect(link.getAttribute("href")).toContain("explorer-studio-next.genlayer.com/address/0x1505D06B");
   });
 
   it("shows the current test count and links the repository's tests", () => {

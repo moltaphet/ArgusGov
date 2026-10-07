@@ -1,0 +1,6 @@
+[profile.default]
+src = "contracts/enforcement"
+test = "contracts/enforcement/test"
+out = "forge-out"
+cache_path = "forge-cache"
+solc_version = "0.8.24"

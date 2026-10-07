@@ -45,6 +45,18 @@ const STAGES: Stage[] = [
   },
 ];
 
+const HARDENING_FLOW = [
+  ["DAO Timelock / Governor", "Proposal created on the origin chain"],
+  ["Provenance Verification", "id = keccak256(abi.encode(targets, values, calldatas, descriptionHash)); RPC consensus"],
+  ["GenVM Multi-Validator Consensus", "LLM compares declared intent with calldata"],
+  ["Execution-Enforcement Hook", "Guarded Timelock reverts while frozen or disputed"],
+] as const;
+
+const HARDENING_POINTS = [
+  ["Proposal provenance", "Every proposal is bound to its origin chain and Governor. Validators check over JSON-RPC that the Governor knows the id and holds PROPOSER_ROLE on the timelock; a tampered payload or description hash derives a different id and is rejected, and an orphan can never be flagged."],
+  ["Execution enforcement", "The freeze is a gate, not a flag. ArgusGuardedTimelock calls ArgusGov before executing and reverts when the circuit breaker is engaged or a dispute is still being inspected, with a dispute buffer after the delay and a guardian emergency brake."],
+] as const;
+
 const INVARIANTS = [
   ["Conservation", "Contract balance always equals pool + escrow + claimable + burn vault."],
   ["Exact bonds", "Challenge and appeal bonds must match exactly; no change accrues."],
@@ -144,6 +156,28 @@ export function AboutSection() {
           );
         })}
       </ol>
+
+      <div id="hardening" className="surface mt-8 scroll-mt-6 p-6" aria-labelledby="hardening-heading">
+        <h3 id="hardening-heading" className="text-sm font-semibold text-zinc-100">Protocol Hardening: Proposal Provenance &amp; Execution Enforcement</h3>
+        <ol className="mt-4 grid gap-3 lg:grid-cols-4" aria-label="Provenance to enforcement flow">
+          {HARDENING_FLOW.map(([name, text], i) => (
+            <li key={name} className="surface-inset relative px-4 py-3">
+              <span className="font-mono text-[10px] text-zinc-600">{String(i + 1).padStart(2, "0")}</span>
+              <p className="mt-1 text-xs font-semibold text-zinc-100">{name}</p>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-zinc-500">{text}</p>
+              {i < HARDENING_FLOW.length - 1 && <span aria-hidden className="absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-zinc-600 lg:block">&#10140;</span>}
+            </li>
+          ))}
+        </ol>
+        <dl className="mt-5 grid gap-x-8 gap-y-4 md:grid-cols-2">
+          {HARDENING_POINTS.map(([name, text]) => (
+            <div key={name} className="border-l border-indigo-400/30 pl-3.5">
+              <dt className="text-xs font-semibold text-zinc-200">{name}</dt>
+              <dd className="mt-1 text-xs leading-relaxed text-zinc-500">{text}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
 
       <div id="invariants" className="surface mt-8 scroll-mt-6 p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">

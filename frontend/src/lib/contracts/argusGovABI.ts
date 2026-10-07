@@ -24,6 +24,10 @@ export const argusGovAbi = [
       { name: "values", type: "uint256[]" }, { name: "calldatas", type: "string[]" }, { name: "forum_url", type: "string" },
     ],
   },
+  {
+    name: "attest_provenance", kind: "write", payable: false,
+    inputs: [{ name: "dao_key", type: "string" }, { name: "proposal_id", type: "uint256" }, { name: "governor", type: "string" }, { name: "description_hash", type: "string" }],
+  },
   { name: "flag_proposal", kind: "write", payable: true, inputs: [{ name: "dao_key", type: "string" }, { name: "proposal_id", type: "uint256" }] },
   { name: "expire_flag", kind: "write", payable: false, inputs: [{ name: "proposal_id", type: "uint256" }] },
   { name: "inspect_proposal", kind: "write", payable: false, inputs: [{ name: "proposal_id", type: "uint256" }] },
@@ -48,6 +52,15 @@ export const argusGovAbi = [
     name: "is_execution_frozen", kind: "view", payable: false,
     inputs: [{ name: "dao_key", type: "string" }, { name: "proposal_id", type: "uint256" }, { name: "expected_payload_hash", type: "bytes" }],
   },
+  { name: "get_provenance", kind: "view", payable: false, inputs: [{ name: "dao_key", type: "string" }, { name: "proposal_id", type: "uint256" }] },
+  {
+    name: "get_execution_gate", kind: "view", payable: false,
+    inputs: [{ name: "dao_key", type: "string" }, { name: "proposal_id", type: "uint256" }, { name: "expected_payload_hash", type: "bytes" }],
+  },
+  {
+    name: "is_execution_blocked", kind: "view", payable: false,
+    inputs: [{ name: "dao_key", type: "string" }, { name: "proposal_id", type: "uint256" }, { name: "expected_payload_hash", type: "bytes" }],
+  },
   { name: "get_claimable", kind: "view", payable: false, inputs: [{ name: "who_hex", type: "string" }] },
   { name: "get_cooldown_until", kind: "view", payable: false, inputs: [{ name: "who_hex", type: "string" }] },
   { name: "whoami", kind: "view", payable: false, inputs: [] },
@@ -63,6 +76,7 @@ export interface ArgusGovWriteArgs {
   claim_guardianship: [daoKey: string];
   withdraw_pool: [daoKey: string, amount: bigint];
   commit_proposal: [daoKey: string, proposalId: bigint, targets: string[], values: bigint[], calldatas: string[], forumUrl: string];
+  attest_provenance: [daoKey: string, proposalId: bigint, governor: string, descriptionHash: string];
   flag_proposal: [daoKey: string, proposalId: bigint];
   expire_flag: [proposalId: bigint];
   inspect_proposal: [proposalId: bigint];

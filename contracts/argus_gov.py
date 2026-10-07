@@ -74,6 +74,26 @@ MAX_REFLAGS = 1                          # one more challenge after a SAFE verdi
 REFLAG_BOND_MULTIPLIER = 2               # the re-flag bond is 2x the base bond
 SCORE_TOLERANCE = 20                     # validator score tolerance
 
+# --- Proposal provenance -------------------------------------------------------
+# Provenance is the proof that a committed proposal really exists on the source chain's
+# Governor and was not fabricated. Validators check it over JSON-RPC with consensus.
+PROV_UNVERIFIED = "UNVERIFIED"           # committed, never attested
+PROV_VERIFIED = "VERIFIED"               # Governor on the origin chain knows the proposal
+PROV_ORPHAN = "ORPHAN"                   # attested, and the origin chain has no such proposal
+SEL_PROPOSAL_SNAPSHOT = "2d63f693"       # Governor.proposalSnapshot(uint256): 0 for an unknown id
+SEL_HAS_ROLE = "91d14854"                # TimelockController.hasRole(bytes32,address)
+PROPOSER_ROLE = "b09aa5aeb3702cfd50b6b62bc4532604938f21248a27a1d5ca736082b6819cc1"  # keccak256("PROPOSER_ROLE")
+# Trusted JSON-RPC endpoints per origin chain. A caller can never choose the endpoint, so
+# nobody can point the validators at a node that lies.
+PROVENANCE_RPC = {
+    1: "https://ethereum-rpc.publicnode.com",
+    10: "https://optimism-rpc.publicnode.com",
+    137: "https://polygon-bor-rpc.publicnode.com",
+    8453: "https://base-rpc.publicnode.com",
+    42161: "https://arbitrum-one-rpc.publicnode.com",
+    11155111: "https://ethereum-sepolia-rpc.publicnode.com",
+}
+
 # --- Statuses (stored as plain strings; enums are not storage types) --------
 REGISTERED = "REGISTERED"
 ANALYZING = "ANALYZING"
@@ -179,10 +199,8 @@ def _pad32(b: bytes) -> bytes:
     return b + b"\x00" * (-len(b) % 32)
 
 
-def proposal_payload_hash(targets: list, values: list, calldatas: list, forum_url: str) -> str:
-    """keccak256(abi.encode(address[] targets, uint256[] values, bytes[] calldatas,
-    bytes32 keccak256(forum_url))): the layout Governor contracts hash proposals
-    with, so a DAO can recompute it independently."""
+def _abi_encode_hash(targets: list, values: list, calldatas: list, tail: bytes) -> bytes:
+    """keccak256(abi.encode(address[] targets, uint256[] values, bytes[] calldatas, bytes32 tail))."""
     n = len(targets)
     addrs = _u256_word(n) + b"".join(bytes(12) + bytes.fromhex(t[2:]) for t in targets)
     vals = _u256_word(n) + b"".join(_u256_word(v) for v in values)
@@ -200,7 +218,32 @@ def proposal_payload_hash(targets: list, values: list, calldatas: list, forum_ur
     off_b = off_a + len(addrs)
     off_c = off_b + len(vals)
     encoded = (_u256_word(off_a) + _u256_word(off_b) + _u256_word(off_c)
-               + keccak256(forum_url.encode("utf-8")) + addrs + vals + datas)
+               + tail + addrs + vals + datas)
+    return keccak256(encoded)
+
+
+def proposal_payload_hash(targets: list, values: list, calldatas: list, forum_url: str) -> str:
+    """keccak256(abi.encode(address[] targets, uint256[] values, bytes[] calldatas,
+    bytes32 keccak256(forum_url))): the layout Governor contracts hash proposals
+    with, so a DAO can recompute it independently."""
+    return "0x" + _abi_encode_hash(targets, values, calldatas, keccak256(forum_url.encode("utf-8"))).hex()
+
+
+def derive_governor_proposal_id(targets: list, values: list, calldatas: list, description_hash: bytes) -> int:
+    """The canonical OpenZeppelin Governor.hashProposal:
+    uint256(keccak256(abi.encode(targets, values, calldatas, descriptionHash)))."""
+    if len(description_hash) != 32:
+        raise _fail("description_hash must be 32 bytes")
+    return int.from_bytes(_abi_encode_hash(targets, values, calldatas, description_hash), "big")
+
+
+def provenance_binding_hash(chain_id: int, governor: str, proposal_id: int, payload_hash: str,
+                            description_hash: bytes) -> str:
+    """keccak256(abi.encode(uint256 chainId, address governor, uint256 proposalId, bytes32 payloadHash,
+    bytes32 descriptionHash)): ties the submitted payload and forum link to the Governor and chain
+    they came from, so none of the five can be swapped without changing the binding."""
+    encoded = (_u256_word(chain_id) + bytes(12) + bytes.fromhex(governor[2:]) + _u256_word(proposal_id)
+               + bytes.fromhex(payload_hash[2:]) + description_hash)
     return "0x" + keccak256(encoded).hex()
 
 
@@ -504,6 +547,65 @@ def _analyze(forum_url: str, targets: list, values: list, calldatas: list) -> di
     return _parse_verdict(raw)
 
 
+def _rpc_batch(rpc_url: str, governor: str, timelock: str, proposal_id: int) -> dict:
+    """One JSON-RPC batch against the origin chain: Governor.proposalSnapshot(id) and
+    Timelock.hasRole(PROPOSER_ROLE, governor). Returns plain deterministic facts, or raises
+    a [TRANSIENT] error when the node cannot answer (an outage must never read as 'orphan')."""
+    snapshot_data = "0x" + SEL_PROPOSAL_SNAPSHOT + _u256_word(proposal_id).hex()
+    role_data = "0x" + SEL_HAS_ROLE + PROPOSER_ROLE + "0" * 24 + governor[2:]
+    batch = [
+        {"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"to": governor, "data": snapshot_data}, "latest"]},
+        {"jsonrpc": "2.0", "id": 2, "method": "eth_call", "params": [{"to": timelock, "data": role_data}, "latest"]},
+    ]
+    try:
+        res = gl.nondet.web.post(rpc_url, body=json.dumps(batch), headers={"Content-Type": "application/json"})
+        status = getattr(res, "status", None)
+        body = res.body
+        if isinstance(body, (bytes, bytearray)):
+            body = bytes(body).decode("utf-8", errors="replace")
+        if not (isinstance(status, int) and 200 <= status < 300) or not isinstance(body, str):
+            raise ValueError("bad rpc status")
+        answers = {item.get("id"): item for item in json.loads(body)}
+    except Exception:
+        raise gl.vm.UserError(f"{ERR_TRANSIENT} origin chain RPC unavailable")
+
+    def word(item):
+        # A reverted call (unknown proposal on some Governor versions) carries an `error`: an
+        # explicit negative answer. Anything else malformed is an infrastructure fault.
+        if not isinstance(item, dict):
+            raise gl.vm.UserError(f"{ERR_TRANSIENT} malformed RPC response")
+        if "error" in item:
+            return None
+        result = item.get("result")
+        if not isinstance(result, str) or not re.match(r"^0x[0-9a-fA-F]{64}$", result):
+            raise gl.vm.UserError(f"{ERR_TRANSIENT} malformed RPC response")
+        return int(result[2:], 16)
+
+    snapshot = word(answers.get(1))
+    has_role = word(answers.get(2))
+    return {"proposal_exists": bool(snapshot), "governor_authorized": bool(has_role)}
+
+
+def _consensus_provenance(chain_id: int, governor: str, timelock: str, proposal_id: int) -> dict:
+    """Validators independently query the origin chain and must agree exactly."""
+    rpc_url = PROVENANCE_RPC.get(chain_id)
+    if rpc_url is None:
+        raise _fail(f"no trusted RPC endpoint for chain {chain_id}")
+
+    def leader_fn():
+        return _rpc_batch(rpc_url, governor, timelock, proposal_id)
+
+    def validator_fn(leaders: gl.vm.Result) -> bool:
+        if not isinstance(leaders, gl.vm.Return):
+            return False
+        try:
+            return leaders.calldata == leader_fn()
+        except Exception:
+            return False
+
+    return gl.vm.run_nondet(leader_fn, validator_fn)
+
+
 def _verdicts_equivalent(leader: dict, mine: dict) -> bool:
     if (leader["score"] >= THREAT_THRESHOLD) != (mine["score"] >= THREAT_THRESHOLD):
         return False
@@ -574,6 +676,11 @@ class CommittedProposal:
     flag_id: u256          # record id of the latest flag, 0 when none
     reflag_count: u256     # re-flags used after a SAFE verdict (max MAX_REFLAGS)
     frozen: bool           # execution freeze consumed by the DAO's guard
+    provenance_status: str   # UNVERIFIED | VERIFIED | ORPHAN
+    governor: str            # origin Governor the proposal was attested against
+    description_hash: str    # 0x keccak256(description) the Governor id was derived with
+    provenance_binding: str  # keccak256(chain, governor, proposal id, payload hash, description hash)
+    provenance_at: u256
 
 
 @allow_storage
@@ -654,6 +761,11 @@ def _committed_view(c: CommittedProposal, flaggable: bool, required_bond: int, f
         "flaggable": flaggable,
         "required_bond": required_bond,
         "frozen": c.frozen,
+        "provenance_status": c.provenance_status,
+        "governor": c.governor,
+        "description_hash": c.description_hash,
+        "provenance_binding": c.provenance_binding,
+        "provenance_at": int(c.provenance_at),
     }
 
 
@@ -859,6 +971,60 @@ class ArgusGov(gl.contract.Contract):
         return bytes(expected_payload_hash) == bytes.fromhex(c.payload_hash[2:])
 
     @gl.public.view
+    def get_provenance(self, dao_key: str, proposal_id: int) -> dict:
+        """Where a committed proposal came from: origin chain, Governor, description hash and
+        the binding hash that ties them to the committed payload."""
+        key, chain_id, address = _split_dao_key(dao_key)
+        c = self._get_committed(key, proposal_id)
+        return {
+            "dao_key": key, "chain_id": chain_id, "timelock": address,
+            "dao_proposal_id": int(c.dao_proposal_id),
+            "status": c.provenance_status, "verified": c.provenance_status == PROV_VERIFIED,
+            "governor": c.governor, "description_hash": c.description_hash,
+            "payload_hash": c.payload_hash, "binding": c.provenance_binding,
+            "attested_at": int(c.provenance_at),
+        }
+
+    def _dispute_open(self, c: CommittedProposal) -> bool:
+        """A flag is awaiting or undergoing validator inspection (or an appeal re-run)."""
+        if int(c.flag_id) == 0:
+            return False
+        return self.proposals[c.flag_id].status in (REGISTERED, ANALYZING, CHALLENGED_PAUSED)
+
+    @gl.public.view
+    def get_execution_gate(self, dao_key: str, proposal_id: int, expected_payload_hash: bytes) -> dict:
+        return self._gate(dao_key, proposal_id, expected_payload_hash)
+
+    def _gate(self, dao_key: str, proposal_id: int, expected_payload_hash: bytes) -> dict:
+        """Everything an execution guard needs in one call. `blocked` is true when the
+        proposal is frozen by a verdict OR a dispute is still open, so a proposal cannot
+        slip through execution while validators are mid-inspection. Like is_execution_frozen,
+        every positive answer is bound to the exact committed payload hash."""
+        key, _, _ = _split_dao_key(dao_key)
+        ck = _commit_key(key, proposal_id)
+        none = {"committed": False, "hash_matches": False, "frozen": False, "dispute_open": False,
+                "blocked": False, "provenance_status": "", "reason": "no commitment"}
+        if ck not in self.committed:
+            return none
+        c = self.committed[ck]
+        matches = isinstance(expected_payload_hash, (bytes, bytearray)) and (
+            bytes(expected_payload_hash) == bytes.fromhex(c.payload_hash[2:]))
+        if not matches:
+            return {**none, "committed": True, "provenance_status": c.provenance_status,
+                    "reason": "payload hash does not match the commitment"}
+        dispute = self._dispute_open(c)
+        reason = ("frozen by circuit breaker verdict" if c.frozen
+                  else "dispute inspection in progress" if dispute else "clear")
+        return {"committed": True, "hash_matches": True, "frozen": c.frozen, "dispute_open": dispute,
+                "blocked": c.frozen or dispute, "provenance_status": c.provenance_status, "reason": reason}
+
+    @gl.public.view
+    def is_execution_blocked(self, dao_key: str, proposal_id: int, expected_payload_hash: bytes) -> bool:
+        """is_execution_frozen widened by the dispute buffer: True while a verdict freezes the
+        proposal or a flag is still being inspected."""
+        return bool(self._gate(dao_key, proposal_id, expected_payload_hash)["blocked"])
+
+    @gl.public.view
     def get_claimable(self, who_hex: str) -> int:
         who = who_hex.strip().lower()
         return int(self.claimable[who]) if who in self.claimable else 0
@@ -985,9 +1151,52 @@ class ArgusGov(gl.contract.Contract):
             flag_id=u256(0),
             reflag_count=u256(0),
             frozen=False,
+            provenance_status=PROV_UNVERIFIED,
+            governor="",
+            description_hash="",
+            provenance_binding="",
+            provenance_at=u256(0),
         )
         self.committed_keys.append(ck)
         return phash
+
+    # ------------------------------------------------------------- provenance
+    @gl.public.write
+    def attest_provenance(self, dao_key: str, proposal_id: int, governor: str, description_hash: str) -> str:
+        """Prove a committed proposal is the one a real Governor created. Permissionless, because
+        every check is objective:
+          1. Canonical derivation (deterministic): proposal_id must equal
+             keccak256(abi.encode(targets, values, calldatas, descriptionHash)). A tampered payload or
+             description hash derives a different id and the call reverts.
+          2. Origin check (validator consensus over JSON-RPC on the origin chain): the Governor must
+             know the proposal (proposalSnapshot != 0) and hold PROPOSER_ROLE on the DAO timelock.
+        A proposal the origin chain does not know is marked ORPHAN and can no longer be flagged.
+        Returns the resulting provenance status."""
+        key, chain_id, timelock = _split_dao_key(dao_key)
+        self._require_registered(key)
+        c = self._get_committed(key, proposal_id)
+        if c.provenance_status == PROV_VERIFIED:
+            raise _fail("provenance already verified")
+        governor = _norm_addr(governor)
+        dh = description_hash.strip().lower()
+        if not re.match(r"^0x[0-9a-f]{64}$", dh):
+            raise _fail("description_hash must be a 0x-prefixed 32-byte hex string")
+        dh_bytes = bytes.fromhex(dh[2:])
+        derived = derive_governor_proposal_id(
+            json.loads(c.targets_json), json.loads(c.values_json), json.loads(c.calldatas_json), dh_bytes)
+        if derived != int(c.dao_proposal_id):
+            raise _fail("provenance mismatch: proposal id is not keccak256(abi.encode(targets, values, "
+                        "calldatas, descriptionHash)); the payload or description hash was tampered with")
+        facts = _consensus_provenance(chain_id, governor, timelock, int(c.dao_proposal_id))
+        c.governor = governor
+        c.description_hash = dh
+        c.provenance_binding = provenance_binding_hash(chain_id, governor, int(c.dao_proposal_id),
+                                                       c.payload_hash, dh_bytes)
+        c.provenance_at = u256(self._now())
+        verified = bool(facts["proposal_exists"]) and bool(facts["governor_authorized"])
+        c.provenance_status = PROV_VERIFIED if verified else PROV_ORPHAN
+        self._save_committed(c)
+        return c.provenance_status
 
     # ------------------------------------------------------------------ flag
     @gl.public.write.payable
@@ -1002,6 +1211,8 @@ class ArgusGov(gl.contract.Contract):
         key, _, address = _split_dao_key(dao_key)
         self._require_registered(key)
         c = self._get_committed(key, proposal_id)
+        if c.provenance_status == PROV_ORPHAN:
+            raise _fail("orphan proposal: the origin chain has no such proposal")
         if int(c.flag_id) != 0:
             if self.proposals[c.flag_id].status != VERIFIED_SAFE:
                 raise _fail("this proposal is already flagged")
