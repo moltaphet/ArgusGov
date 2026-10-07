@@ -16,7 +16,7 @@ function toProposal(raw: any, frozen: boolean): Proposal {
     id: Number(raw.id),
     daoKey: String(raw.dao_key),
     daoAddress: String(raw.dao_address),
-    daoProposalId: Number(raw.dao_proposal_id),
+    daoProposalId: toBig(raw.dao_proposal_id),
     forumUrl: String(raw.forum_url),
     targets: raw.targets ?? [],
     values: (raw.values ?? []).map(toBig),
@@ -44,7 +44,7 @@ export function toCommitted(raw: any): CommittedProposal {
     daoKey: String(raw.dao_key),
     daoAddress: String(raw.dao_address),
     chainId: Number(raw.chain_id),
-    daoProposalId: Number(raw.dao_proposal_id),
+    daoProposalId: toBig(raw.dao_proposal_id),
     forumUrl: String(raw.forum_url),
     targets: raw.targets ?? [],
     values: (raw.values ?? []).map(toBig),
@@ -88,7 +88,7 @@ async function withoutProbeNoise<T>(work: () => Promise<T>): Promise<T> {
 }
 
 /** Flag records are enumerated by probing ids 1..n until the contract reverts. */
-function loadProposals(): Promise<Proposal[]> {
+export function loadProposals(): Promise<Proposal[]> {
   return withoutProbeNoise(probeProposals);
 }
 
@@ -105,7 +105,7 @@ async function probeProposals(): Promise<Proposal[]> {
     try {
       // The freeze check is bound to a payload hash. Asking with this record's own (committed) hash
       // answers "is this exact payload frozen?", which is what the dashboard shows.
-      frozen = Boolean(await readView<boolean>("is_execution_frozen", [raw.dao_key, BigInt(raw.dao_proposal_id), payloadHashToBytes(String(raw.payload_hash))]));
+      frozen = Boolean(await readView<boolean>("is_execution_frozen", [raw.dao_key, toBig(raw.dao_proposal_id), payloadHashToBytes(String(raw.payload_hash))]));
     } catch {
       /* freeze flag is best-effort */
     }
@@ -114,7 +114,7 @@ async function probeProposals(): Promise<Proposal[]> {
   return out;
 }
 
-async function loadCommitted(): Promise<CommittedProposal[]> {
+export async function loadCommitted(): Promise<CommittedProposal[]> {
   const count = Number(await readView<number>("get_committed_count"));
   const rows = await Promise.all(Array.from({ length: Math.min(count, 200) }, (_, i) => readView<any>("get_committed_at", [BigInt(i)])));
   return rows.map(toCommitted);
@@ -207,13 +207,13 @@ export function useLedger() {
 }
 
 /** The on-chain verdict for a committed proposal, including the full reasoning text. */
-export function useVerdict(daoKey: string, daoProposalId: number, enabled = true) {
+export function useVerdict(daoKey: string, daoProposalId: bigint, enabled = true) {
   return useQuery({
-    queryKey: ["verdict", daoKey, daoProposalId],
+    queryKey: ["verdict", daoKey, String(daoProposalId)],
     enabled,
     staleTime: 30_000,
     queryFn: async () => {
-      const v = await readView<any>("get_proposal_verdict", [daoKey, BigInt(daoProposalId)]);
+      const v = await readView<any>("get_proposal_verdict", [daoKey, daoProposalId]);
       return {
         flagged: Boolean(v.flagged),
         status: String(v.status),

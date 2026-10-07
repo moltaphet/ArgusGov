@@ -5,8 +5,8 @@ import { useContractWrite } from "./useContractWrite";
 /** Lifts the execution freeze once an appeal was accepted. Permissionless, because the condition is objective. */
 export function useUnfreezeProposal() {
   const write = useContractWrite("Lift freeze");
-  const unfreeze = async (daoKey: string, proposalId: number) =>
-    (await write.run("unfreeze_proposal", [daoKey.toLowerCase(), BigInt(proposalId)])) !== null;
+  const unfreeze = async (daoKey: string, proposalId: bigint) =>
+    (await write.run("unfreeze_proposal", [daoKey.toLowerCase(), proposalId])) !== null;
   return { ...write, unfreeze };
 }
 

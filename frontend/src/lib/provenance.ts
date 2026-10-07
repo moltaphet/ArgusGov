@@ -38,7 +38,7 @@ export function provenanceView(c: CommittedProposal): ProvenanceView {
   const base = { status, governor, chainId: c.chainId, descriptionHash, idMatches: null as boolean | null };
   if (status === "VERIFIED") {
     const idMatches = /^0x[0-9a-fA-F]{64}$/.test(descriptionHash)
-      ? deriveGovernorProposalId(c.targets, c.values, c.calldatas, descriptionHash) === BigInt(c.daoProposalId)
+      ? deriveGovernorProposalId(c.targets, c.values, c.calldatas, descriptionHash) === c.daoProposalId
       : null;
     return { ...base, tone: "safe", headline: "VERIFIED ON-CHAIN ORIGIN", idMatches,
       detail: "Validators confirmed over RPC consensus that this Governor created the proposal and may queue on the timelock." };

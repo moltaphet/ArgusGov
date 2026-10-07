@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useChainGate } from "@/hooks/useChainGate";
 import { CHALLENGE_BOND, useFlagProposal } from "@/hooks/useFlagProposal";
 import { decodeActions } from "@/lib/decode";
-import { formatGen, formatTokens, shortAddress } from "@/lib/format";
+import { formatGen, formatTokens, shortAddress, shortId } from "@/lib/format";
 import type { CommittedProposal } from "@/lib/types";
 import { CopyButton } from "./CopyButton";
 import { Identicon } from "./Identicon";
@@ -110,7 +110,7 @@ export function FlagProposalModal({ open, onClose, committed, loading = false, p
                     className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 ${on ? "border-indigo-400/50 bg-indigo-400/[0.08]" : "border-white/[0.07] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.04]"}`}>
                     <Identicon address={c.daoAddress} size={32} />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-zinc-100">Proposal #{c.daoProposalId}</span>
+                      <span className="block text-sm font-medium text-zinc-100">Proposal #{shortId(c.daoProposalId)}</span>
                       <span className="block truncate font-mono text-[11px] text-zinc-500">{shortAddress(c.daoAddress, 8, 6)} · chain {c.chainId} · {hostOf(c.forumUrl)}</span>
                     </span>
                     {c.requiredBond > CHALLENGE_BOND && <span className="badge badge-warn font-mono">re-flag · {formatGen(c.requiredBond)} GEN</span>}

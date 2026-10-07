@@ -1,7 +1,7 @@
 "use client";
 
 import { Flag, Siren } from "lucide-react";
-import { formatGen, shortAddress, timeAgo } from "@/lib/format";
+import { formatGen, shortAddress, shortId, timeAgo } from "@/lib/format";
 import type { DaoSummary, Proposal } from "@/lib/types";
 import { CopyButton } from "./CopyButton";
 import { Identicon } from "./Identicon";
@@ -97,7 +97,7 @@ export function ActivityLog({ proposals, onSelect }: { proposals: Proposal[]; on
                 {e.kind === "breaker" ? <Siren size={13} /> : <Flag size={13} />}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-xs text-zinc-300">{e.kind === "breaker" ? "Circuit breaker tripped" : "Proposal flagged"} <span className="font-mono text-zinc-500">#{e.proposal.daoProposalId}</span></span>
+                <span className="block text-xs text-zinc-300">{e.kind === "breaker" ? "Circuit breaker tripped" : "Proposal flagged"} <span className="font-mono text-zinc-500">#{shortId(e.proposal.daoProposalId)}</span></span>
                 <span className="block font-mono text-[10.5px] text-zinc-600">{timeAgo(e.at)} · {shortAddress(e.proposal.daoAddress, 6, 4)}</span>
               </span>
             </button>

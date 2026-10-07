@@ -12,7 +12,7 @@ import { decodeActions } from "@/lib/decode";
 import { availableActions, type ActionId } from "@/lib/lifecycle";
 import { readView } from "@/lib/genlayer";
 import { useCommitted } from "@/lib/queries";
-import { countdown, formatGen, shortAddress, timeAgo } from "@/lib/format";
+import { countdown, formatGen, shortAddress, shortId, timeAgo } from "@/lib/format";
 import { inspectHashFor, loadConsensus } from "@/lib/consensus";
 import { EXPLORER_URL, PROTOCOL } from "@/lib/networks";
 import type { Proposal } from "@/lib/types";
@@ -55,7 +55,7 @@ export function LiveProposalInspector({ proposals, selectedId, onSelect, loading
             {proposals.map((p) => (
               <button key={p.id} role="tab" aria-selected={p.id === selected?.id} onClick={() => onSelect(p.id)}
                 className={`shrink-0 rounded-md px-2.5 py-1 font-mono text-xs transition ${p.id === selected?.id ? "bg-white/[0.1] text-zinc-100" : "text-zinc-500 hover:text-zinc-200"}`}>
-                #{p.daoProposalId}
+                #{shortId(p.daoProposalId)}
               </button>
             ))}
           </div>
@@ -117,7 +117,7 @@ function Detail({ p }: { p: Proposal }) {
           <Identicon address={p.daoAddress} size={34} />
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-zinc-100">Proposal #{p.daoProposalId}</span>
+              <span className="text-sm font-semibold text-zinc-100">Proposal #{shortId(p.daoProposalId)}</span>
               <span className="font-mono text-[11px] text-zinc-600">record {p.id}</span>
             </div>
             <div className="flex items-center gap-1 font-mono text-[11px] text-zinc-500">

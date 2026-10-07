@@ -40,10 +40,10 @@ describe("flag proposal modal", () => {
 
   it("offers only proposals the contract says can be challenged right now", () => {
     setup(10n * GEN, [
-      committedProposal({ daoProposalId: 1 }),
-      committedProposal({ daoProposalId: 2, flagId: 7, flaggable: false, requiredBond: 0n, flagStatus: "REGISTERED" }),            // live flag
-      committedProposal({ daoProposalId: 3, frozen: true, flaggable: false, requiredBond: 0n, flagStatus: "FLAGGED_MALICIOUS" }),  // frozen
-      committedProposal({ daoProposalId: 4, flagId: 9, flaggable: false, requiredBond: 0n, reflagCount: 1, flagStatus: "VERIFIED_SAFE" }), // re-flag used
+      committedProposal({ daoProposalId: 1n }),
+      committedProposal({ daoProposalId: 2n, flagId: 7, flaggable: false, requiredBond: 0n, flagStatus: "REGISTERED" }),            // live flag
+      committedProposal({ daoProposalId: 3n, frozen: true, flaggable: false, requiredBond: 0n, flagStatus: "FLAGGED_MALICIOUS" }),  // frozen
+      committedProposal({ daoProposalId: 4n, flagId: 9, flaggable: false, requiredBond: 0n, reflagCount: 1, flagStatus: "VERIFIED_SAFE" }), // re-flag used
     ]);
     const options = screen.getAllByRole("radio");
     expect(options).toHaveLength(1);
@@ -51,7 +51,7 @@ describe("flag proposal modal", () => {
   });
 
   it("lists a proposal judged safe once as a re-flag at double the bond", async () => {
-    setup(10n * GEN, [committedProposal({ daoProposalId: 5, flagId: 3, flaggable: true, requiredBond: 4n * GEN, flagStatus: "VERIFIED_SAFE" })]);
+    setup(10n * GEN, [committedProposal({ daoProposalId: 5n, flagId: 3, flaggable: true, requiredBond: 4n * GEN, flagStatus: "VERIFIED_SAFE" })]);
     expect(screen.getByRole("radio")).toHaveTextContent(/re-flag · 4 gen/i);
     await userEvent.click(screen.getByRole("radio"));
     expect(screen.getByTestId("reflag-note")).toHaveTextContent(/last challenge/i);
@@ -60,7 +60,7 @@ describe("flag proposal modal", () => {
   });
 
   it("holds a re-flag to the doubled balance: 3 GEN covers a first flag but not a re-flag", async () => {
-    setup(3n * GEN, [committedProposal({ daoProposalId: 5, flagId: 3, requiredBond: 4n * GEN, flagStatus: "VERIFIED_SAFE" })]);
+    setup(3n * GEN, [committedProposal({ daoProposalId: 5n, flagId: 3, requiredBond: 4n * GEN, flagStatus: "VERIFIED_SAFE" })]);
     const user = userEvent.setup();
     await user.click(screen.getByRole("radio"));
     await user.click(screen.getByRole("checkbox"));

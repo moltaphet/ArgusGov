@@ -18,7 +18,7 @@ export function ReasoningTrace({ hash, onchainHash, daoKey, daoProposalId, score
   hash: string | undefined;
   onchainHash: string;
   daoKey: string;
-  daoProposalId: number;
+  daoProposalId: bigint;
   scored: boolean;
 }) {
   // The full reasoning text is stored on-chain and served by get_proposal_verdict.

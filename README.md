@@ -16,7 +16,7 @@ tests/test_argus_gov.py           core suite: behaviour, attacks, economics, inv
 tests/test_provenance_enforcement.py  provenance derivation/tamper/orphan checks and end-to-end enforcement
 tests/                            341 tests (behaviour, attacks, economics, invariants, provenance, enforcement)
 scripts/deploy_and_simulate.py    in-memory attack replay, or live deploy against a network
-frontend/                         Next.js dashboard (305 tests)
+frontend/                         Next.js dashboard (307 tests)
 deployments/                      live Studio Next records (v1 archived, current)
 ```
 
@@ -414,7 +414,7 @@ connection so DNS cannot change between check and use, redirects re-validated ho
 ports only, and an in-memory sliding-window limit of 10 requests a minute per client. The limiter
 is per server instance; a multi-instance deployment needs a shared store for a global limit.
 
-Frontend tests (Vitest and Testing Library, 305 tests): `cd frontend && npm test`. They cover the
+Frontend tests (Vitest and Testing Library, 307 tests): `cd frontend && npm test`. They cover the
 network-switch prompt, flag-modal gating (no payload inputs, committed list, unacknowledged
 terms, balance below the 2 GEN bond), the commit panel, the write hook's simulating, pending,
 confirming and success states, the proposal status machine, the calldata decoder with native

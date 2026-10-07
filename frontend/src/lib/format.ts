@@ -7,6 +7,12 @@ export function toBig(value: unknown): bigint {
   return 0n;
 }
 
+/** A proposal id for display: React renders no bigint, and a Governor-derived id has 77 digits. */
+export function shortId(id: bigint): string {
+  const s = id.toString();
+  return s.length > 12 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s;
+}
+
 export function formatGen(atto: bigint, maxFraction = 4): string {
   const whole = atto / ATTO;
   const frac = atto % ATTO;

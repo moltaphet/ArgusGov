@@ -11,7 +11,8 @@ export interface Proposal {
   id: number;
   daoKey: string;
   daoAddress: string;
-  daoProposalId: number;
+  /** uint256: a Governor-derived id has 77 digits, far past Number.MAX_SAFE_INTEGER. */
+  daoProposalId: bigint;
   forumUrl: string;
   targets: string[];
   values: bigint[];
@@ -40,7 +41,8 @@ export interface CommittedProposal {
   daoKey: string;
   daoAddress: string;
   chainId: number;
-  daoProposalId: number;
+  /** uint256: a Governor-derived id has 77 digits, far past Number.MAX_SAFE_INTEGER. */
+  daoProposalId: bigint;
   forumUrl: string;
   targets: string[];
   values: bigint[];

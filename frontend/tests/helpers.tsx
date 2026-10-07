@@ -30,7 +30,7 @@ export const PAYLOAD_HASH = "0x" + "ab".repeat(32);
 
 export function committedProposal(over: Partial<CommittedProposal> = {}): CommittedProposal {
   return {
-    daoKey: DAO_KEY, daoAddress: DAO, chainId: CHAIN, daoProposalId: 42, forumUrl: FORUM, targets: [TOKEN], values: [0n],
+    daoKey: DAO_KEY, daoAddress: DAO, chainId: CHAIN, daoProposalId: 42n, forumUrl: FORUM, targets: [TOKEN], values: [0n],
     calldatas: [transferCalldata(EVIL, 9_999_999n * GEN)], payloadHash: PAYLOAD_HASH, committedBy: WALLET, committedAt: 1000,
     flagId: 0, reflagCount: 0, flagStatus: "", flaggable: true, requiredBond: 2n * GEN, frozen: false,
     provenance: { status: "UNVERIFIED", governor: "", descriptionHash: "", binding: "", attestedAt: 0 }, ...over,
@@ -39,7 +39,7 @@ export function committedProposal(over: Partial<CommittedProposal> = {}): Commit
 
 export function proposal(over: Partial<Proposal> = {}): Proposal {
   return {
-    id: 1, daoKey: DAO_KEY, daoAddress: DAO, daoProposalId: 42, forumUrl: FORUM, targets: [TOKEN], values: [0n], calldatas: [],
+    id: 1, daoKey: DAO_KEY, daoAddress: DAO, daoProposalId: 42n, forumUrl: FORUM, targets: [TOKEN], values: [0n], calldatas: [],
     proposedAt: 1000, challenger: "0xCHALLENGER", challengerBond: 2n * GEN, threatScore: 85, status: "FLAGGED_MALICIOUS",
     reasoningHash: "", payloadHash: PAYLOAD_HASH, appellant: "", appealBond: 0n, flaggedAt: 10_000, rewardAmount: 12n * GEN,
     rewardClaimed: false, resolution: "", isReflag: false, frozen: true, ...over,

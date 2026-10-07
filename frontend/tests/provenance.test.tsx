@@ -10,7 +10,7 @@ const DESC = descriptionHashOf("# Marketing grant\nFund Q3 marketing.");
 const PID = deriveGovernorProposalId([TOKEN], [0n], [CALLDATA], DESC);
 
 const verified = (over = {}) => committedProposal({
-  daoProposalId: Number(PID % 2n ** 53n), calldatas: [CALLDATA],
+  daoProposalId: PID, calldatas: [CALLDATA],
   provenance: { status: "VERIFIED", governor: GOVERNOR, descriptionHash: DESC, binding: "0x" + "11".repeat(32), attestedAt: 5 }, ...over,
 });
 
@@ -54,9 +54,9 @@ describe("ProvenanceBadge", () => {
   });
 
   it("flags a stored payload that no longer derives its id", () => {
-    // daoProposalId is a JS number, so only small ids can be compared exactly: use a real small mismatch.
-    const v = provenanceView(verified({ daoProposalId: 7 }));
-    expect(v.idMatches).toBe(false);
+    expect(provenanceView(verified()).idMatches).toBe(true);
+    expect(provenanceView(verified({ daoProposalId: PID + 1n })).idMatches).toBe(false);
+    expect(provenanceView(verified({ calldatas: [transferCalldata(EVIL, 5_001n * GEN)] })).idMatches).toBe(false);
   });
 });
 
@@ -66,5 +66,14 @@ describe("About section", () => {
     render(<AboutSection />);
     expect(screen.getByRole("heading", { name: /Protocol Hardening: Proposal Provenance & Execution Enforcement/ })).toBeInTheDocument();
     expect(screen.getByRole("list", { name: /Provenance to enforcement flow/ })).toHaveTextContent(/Execution-Enforcement Hook/);
+  });
+});
+
+describe("proposal id display", () => {
+  it("renders small ids whole and 77-digit Governor ids shortened, never blank", async () => {
+    const { shortId } = await import("@/lib/format");
+    expect(shortId(42n)).toBe("42");
+    expect(shortId(PID)).toMatch(/^\d{6}…\d{4}$/);
+    expect(shortId(PID).length).toBeGreaterThan(0);
   });
 });
